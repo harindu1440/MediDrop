@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "177660195558",
+    "project_id": "medidrop-5c183",
+    "storage_bucket": "medidrop-5c183.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:177660195558:android:3644163dcd425ae5508127",
+        "android_client_info": {
+          "package_name": "com.example.medidrop"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDZjpGnBfbsoAo27b9U6fJfV-dr4YJI3vI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1",
+  "databaseURL": "https://medidrop-5c183-default-rtdb.firebaseio.com"
+}

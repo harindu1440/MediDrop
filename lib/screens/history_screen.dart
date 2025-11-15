@@ -199,7 +199,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Medicine History'),
-        backgroundColor: Colors.blue.shade700,
+        backgroundColor: Theme.of(context).colorScheme.primary,
         elevation: 0,
       ),
       body: Column(
@@ -268,7 +268,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
           _selectedFilter = value;
         });
       },
-      selectedColor: color ?? Colors.blue,
+      selectedColor: color ?? Theme.of(context).colorScheme.primary,
       backgroundColor: Colors.grey.shade200,
       labelStyle: TextStyle(
         color: _selectedFilter == value ? Colors.white : Colors.black87,

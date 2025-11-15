@@ -77,7 +77,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Notifications'),
-        backgroundColor: Colors.blue.shade700,
+        backgroundColor: Theme.of(context).colorScheme.primary,
         actions: [
           IconButton(icon: const Icon(Icons.clear_all), onPressed: _clearAll),
         ],
@@ -114,13 +114,15 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
   Widget _buildNotificationCard(Map<String, dynamic> notif) {
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 8),
-      color: notif['read'] ? Colors.white : Colors.blue.shade50,
+      color: notif['read']
+          ? Colors.white
+          : Theme.of(context).colorScheme.primary.withOpacity(0.06),
       child: ListTile(
         leading: Container(
           width: 50,
           height: 50,
           decoration: BoxDecoration(
-            color: Colors.blue.shade100,
+            color: Theme.of(context).colorScheme.primary.withOpacity(0.12),
             borderRadius: BorderRadius.circular(10),
           ),
           child: Center(

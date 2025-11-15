@@ -156,9 +156,27 @@ class _HomeScreenState extends State<HomeScreen> {
           }
           _todayDoses = _todayDoseEntries.length;
         });
+        // Load today's history first so we don't re-schedule reminders for doses already handled
+        await _loadTodayHistory();
         // Ensure scheduled notifications exist for each scheduled dose (cancel/reschedule to avoid duplicates)
         for (final entry in _todayDoseEntries) {
           try {
+            final todays = _todayHistory[entry.medicine.id] ?? [];
+            final takenForDose = todays
+                .where(
+                  (h) => h.status == 'taken' && h.doseIndex == entry.doseIndex,
+                )
+                .length;
+            final missedForDose = todays
+                .where(
+                  (h) => h.status == 'missed' && h.doseIndex == entry.doseIndex,
+                )
+                .length;
+            // If this dose for today is already taken/missed, skip scheduling reminder
+            if ((takenForDose + missedForDose) > 0) {
+              continue;
+            }
+
             await NotificationsService().cancelNotification(
               entry.notificationId,
             );
@@ -174,8 +192,7 @@ class _HomeScreenState extends State<HomeScreen> {
             );
           }
         }
-        // Load today's history to show taken/missed states and sort doses by closeness to now
-        await _loadTodayHistory();
+        // Sort doses by closeness to now
         _todayDoseEntries.sort((a, b) {
           final aDist = a.scheduledDateTime
               .difference(DateTime.now())

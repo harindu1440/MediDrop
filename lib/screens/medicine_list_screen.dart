@@ -123,12 +123,14 @@ class _MedicineListScreenState extends State<MedicineListScreen> {
                         width: 60,
                         height: 60,
                         decoration: BoxDecoration(
-                          color: Colors.blue.shade100,
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.primary.withOpacity(0.12),
                           borderRadius: BorderRadius.circular(10),
                         ),
                         child: Icon(
                           Icons.medication_liquid,
-                          color: Colors.blue,
+                          color: Theme.of(context).colorScheme.primary,
                           size: 32,
                         ),
                       ),
@@ -158,14 +160,16 @@ class _MedicineListScreenState extends State<MedicineListScreen> {
                                 Icon(
                                   Icons.schedule,
                                   size: 12,
-                                  color: Colors.blue.shade600,
+                                  color: Theme.of(context).colorScheme.primary,
                                 ),
                                 const SizedBox(width: 4),
                                 Text(
                                   medicine.time,
                                   style: TextStyle(
                                     fontSize: 12,
-                                    color: Colors.blue.shade600,
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.primary,
                                     fontWeight: FontWeight.w600,
                                   ),
                                 ),
@@ -191,11 +195,20 @@ class _MedicineListScreenState extends State<MedicineListScreen> {
 
                       // Actions column: Taken / Missed text buttons and badges
                       Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.end,
                         children: [
                           if (allowActions)
                             Row(
+                              mainAxisSize: MainAxisSize.min,
                               children: [
                                 TextButton(
+                                  style: TextButton.styleFrom(
+                                    minimumSize: const Size(72, 36),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                    ),
+                                  ),
                                   onPressed: () async {
                                     await _markAsTaken(medicine);
                                     await _loadTodayHistory();
@@ -207,6 +220,12 @@ class _MedicineListScreenState extends State<MedicineListScreen> {
                                 ),
                                 const SizedBox(width: 6),
                                 TextButton(
+                                  style: TextButton.styleFrom(
+                                    minimumSize: const Size(72, 36),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                    ),
+                                  ),
                                   onPressed: () async {
                                     await _markAsMissed(medicine);
                                     await _loadTodayHistory();

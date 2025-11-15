@@ -5,6 +5,7 @@ import 'screens/auth_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/splash_screen.dart';
 import 'services/notifications_service.dart';
+import 'theme.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -44,7 +45,7 @@ class MediDropApp extends StatelessWidget {
     return MaterialApp(
       title: 'MediDrop Test',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(primarySwatch: Colors.blue, useMaterial3: true),
+      theme: appTheme,
       home: const SplashScreen(),
       routes: {
         '/auth': (context) => const AuthScreen(),

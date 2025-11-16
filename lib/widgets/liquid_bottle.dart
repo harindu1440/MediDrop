@@ -63,7 +63,7 @@ class LiquidBottleWidget extends StatelessWidget {
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
                     colors: [
-                      Colors.blue.shade300.withOpacity(0.9),
+                      Colors.blue.shade300.withValues(alpha: 0.9),
                       Colors.blue.shade700,
                     ],
                   ),
@@ -78,7 +78,7 @@ class LiquidBottleWidget extends StatelessWidget {
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.85),
+                  color: Colors.white.withValues(alpha: 0.85),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(
@@ -141,7 +141,7 @@ class LiquidBottleWidget extends StatelessWidget {
                     begin: Alignment.centerLeft,
                     end: Alignment.centerRight,
                     colors: [
-                      Colors.blue.shade300.withOpacity(0.9),
+                      Colors.blue.shade300.withValues(alpha: 0.9),
                       Colors.blue.shade700,
                     ],
                   ),
@@ -156,7 +156,7 @@ class LiquidBottleWidget extends StatelessWidget {
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.85),
+                  color: Colors.white.withValues(alpha: 0.85),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(

@@ -209,38 +209,40 @@ class _AuthScreenState extends State<AuthScreen> {
       final email = _emailController.text.trim();
       final emailKey = email.replaceAll('.', '_').replaceAll('@', '_at_');
 
-      print('🔐 Logging in...');
-      print('   Email: $email');
-      print('   Firebase Key: $emailKey');
+      debugPrint('🔐 Logging in...');
+      debugPrint('   Email: $email');
+      debugPrint('   Firebase Key: $emailKey');
 
       final user = await FirebaseOperations.readData('users/$emailKey');
+      if (!mounted) return;
 
       if (user != null) {
         if (user['password'] == _passwordController.text) {
           // Save user to local storage and navigate
           final prefs = await SharedPreferences.getInstance();
           await prefs.setString('userKey', emailKey);
-          if (mounted) {
-            print('✓ Login successful');
+          if (!mounted) return;
+          {
+            debugPrint('✓ Login successful');
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(content: Text('✓ Login successful!')),
             );
             Navigator.of(context).pushReplacementNamed('/home');
           }
         } else {
-          print('✗ Invalid password');
+          debugPrint('✗ Invalid password');
           ScaffoldMessenger.of(
             context,
           ).showSnackBar(const SnackBar(content: Text('Invalid password')));
         }
       } else {
-        print('✗ User not found');
+        debugPrint('✗ User not found');
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(const SnackBar(content: Text('User not found')));
       }
     } catch (e) {
-      print('✗ Login error: $e');
+      debugPrint('✗ Login error: $e');
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('Error: $e')));
@@ -281,14 +283,15 @@ class _AuthScreenState extends State<AuthScreen> {
         'createdAt': DateTime.now().toIso8601String(),
       };
 
-      print('📝 Registering user...');
-      print('   Email: $email');
-      print('   Firebase Key: $emailKey');
+      debugPrint('📝 Registering user...');
+      debugPrint('   Email: $email');
+      debugPrint('   Firebase Key: $emailKey');
 
       await FirebaseOperations.writeData('users/$emailKey', userData);
+      if (!mounted) return;
 
       if (mounted) {
-        print('✓ User registered successfully');
+        debugPrint('✓ User registered successfully');
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('✓ Account created! Please login.')),
         );
@@ -299,7 +302,7 @@ class _AuthScreenState extends State<AuthScreen> {
         _ageController.clear();
       }
     } catch (e) {
-      print('✗ Registration error: $e');
+      debugPrint('✗ Registration error: $e');
       if (mounted) {
         ScaffoldMessenger.of(
           context,

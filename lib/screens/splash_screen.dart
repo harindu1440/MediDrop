@@ -33,12 +33,12 @@ class _SplashScreenState extends State<SplashScreen>
     _animationController.forward();
 
     Future.delayed(const Duration(seconds: 3), () async {
-      if (mounted) {
-        final prefs = await SharedPreferences.getInstance();
-        final savedUserKey = prefs.getString('userKey');
-        final route = savedUserKey != null ? '/home' : '/auth';
-        Navigator.of(context).pushReplacementNamed(route);
-      }
+      final prefs = await SharedPreferences.getInstance();
+      if (!mounted) return;
+      final savedUserKey = prefs.getString('userKey');
+      final route = savedUserKey != null ? '/home' : '/auth';
+      if (!mounted) return;
+      Navigator.of(context).pushReplacementNamed(route);
     });
   }
 
@@ -77,7 +77,7 @@ class _SplashScreenState extends State<SplashScreen>
                           borderRadius: BorderRadius.circular(20),
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.black.withOpacity(0.2),
+                              color: Colors.black.withValues(alpha: 0.2),
                               blurRadius: 10,
                               offset: const Offset(0, 4),
                             ),

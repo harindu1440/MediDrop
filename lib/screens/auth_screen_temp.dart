@@ -225,12 +225,11 @@ class _AuthScreenState extends State<AuthScreen> {
         userData,
       );
 
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('✓ Account created! Please login.')),
-        );
-        setState(() => _isLogin = true);
-      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('✓ Account created! Please login.')),
+      );
+      setState(() => _isLogin = true);
     } catch (e) {
       ScaffoldMessenger.of(
         context,

@@ -65,7 +65,7 @@ class _LiquidsScreenState extends State<LiquidsScreen> {
                                   borderRadius: BorderRadius.circular(16),
                                   boxShadow: [
                                     BoxShadow(
-                                      color: Colors.blue.withOpacity(0.3),
+                                      color: Colors.blue.withValues(alpha: 0.3),
                                       blurRadius: 12,
                                       offset: const Offset(0, 4),
                                     ),
@@ -112,7 +112,7 @@ class _LiquidsScreenState extends State<LiquidsScreen> {
                               borderRadius: BorderRadius.circular(18),
                               boxShadow: [
                                 BoxShadow(
-                                  color: Colors.blue.withOpacity(0.12),
+                                  color: Colors.blue.withValues(alpha: 0.12),
                                   blurRadius: 16,
                                   offset: const Offset(0, 4),
                                 ),
@@ -132,7 +132,9 @@ class _LiquidsScreenState extends State<LiquidsScreen> {
                                     end: Alignment.bottomRight,
                                     colors: [
                                       Colors.blue.shade50,
-                                      Colors.blue.shade100.withOpacity(0.3),
+                                      Colors.blue.shade100.withValues(
+                                        alpha: 0.3,
+                                      ),
                                     ],
                                   ),
                                   border: Border.all(
@@ -164,8 +166,8 @@ class _LiquidsScreenState extends State<LiquidsScreen> {
                                             ),
                                             boxShadow: [
                                               BoxShadow(
-                                                color: Colors.blue.withOpacity(
-                                                  0.3,
+                                                color: Colors.blue.withValues(
+                                                  alpha: 0.3,
                                                 ),
                                                 blurRadius: 8,
                                                 offset: const Offset(0, 2),
@@ -212,9 +214,11 @@ class _LiquidsScreenState extends State<LiquidsScreen> {
                                           ),
                                           decoration: BoxDecoration(
                                             color: _bottle!.isLow
-                                                ? Colors.red.withOpacity(0.15)
-                                                : Colors.green.withOpacity(
-                                                    0.15,
+                                                ? Colors.red.withValues(
+                                                    alpha: 0.15,
+                                                  )
+                                                : Colors.green.withValues(
+                                                    alpha: 0.15,
                                                   ),
                                             borderRadius: BorderRadius.circular(
                                               8,
@@ -306,7 +310,7 @@ class _LiquidsScreenState extends State<LiquidsScreen> {
                                   end: Alignment.bottomRight,
                                   colors: [
                                     Colors.blue.shade50,
-                                    Colors.blue.shade100.withOpacity(0.5),
+                                    Colors.blue.shade100.withValues(alpha: 0.5),
                                   ],
                                 ),
                               ),
@@ -393,9 +397,12 @@ class _LiquidsScreenState extends State<LiquidsScreen> {
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [color.withOpacity(0.08), color.withOpacity(0.03)],
+          colors: [
+            color.withValues(alpha: 0.08),
+            color.withValues(alpha: 0.03),
+          ],
         ),
-        border: Border.all(color: color.withOpacity(0.2), width: 1),
+        border: Border.all(color: color.withValues(alpha: 0.2), width: 1),
       ),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,

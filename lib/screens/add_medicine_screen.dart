@@ -118,7 +118,7 @@ class _AddMedicineScreenState extends State<AddMedicineScreen> {
                     end: Alignment.bottomRight,
                     colors: [
                       Colors.blue.shade50,
-                      Colors.blue.shade100.withOpacity(0.5),
+                      Colors.blue.shade100.withValues(alpha: 0.5),
                     ],
                   ),
                   borderRadius: BorderRadius.circular(16),
@@ -315,7 +315,7 @@ class _AddMedicineScreenState extends State<AddMedicineScreen> {
                               end: Alignment.bottomRight,
                               colors: [
                                 Colors.blue.shade50,
-                                Colors.blue.shade100.withOpacity(0.3),
+                                Colors.blue.shade100.withValues(alpha: 0.3),
                               ],
                             ),
                             borderRadius: BorderRadius.circular(12),
@@ -405,7 +405,7 @@ class _AddMedicineScreenState extends State<AddMedicineScreen> {
                     end: Alignment.bottomRight,
                     colors: [
                       Colors.blue.shade50,
-                      Colors.blue.shade100.withOpacity(0.5),
+                      Colors.blue.shade100.withValues(alpha: 0.5),
                     ],
                   ),
                   borderRadius: BorderRadius.circular(12),

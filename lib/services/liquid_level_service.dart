@@ -1,5 +1,6 @@
 import 'package:firebase_database/firebase_database.dart';
 import '../models/liquid_level.dart';
+import 'package:flutter/foundation.dart';
 
 class LiquidLevelService {
   static final FirebaseDatabase _db = FirebaseDatabase.instance;
@@ -26,7 +27,7 @@ class LiquidLevelService {
         return defaultBottle;
       }
     } catch (e) {
-      print('Error getting default bottle: $e');
+      debugPrint('Error getting default bottle: $e');
       rethrow;
     }
   }
@@ -35,9 +36,9 @@ class LiquidLevelService {
   static Future<void> writeLiquidLevel(LiquidLevel liquidLevel) async {
     try {
       await _db.ref('$_basePath/${liquidLevel.id}').set(liquidLevel.toMap());
-      print('✓ Liquid level updated: ${liquidLevel.bottleName}');
+      debugPrint('✓ Liquid level updated: ${liquidLevel.bottleName}');
     } catch (e) {
-      print('✗ Error writing liquid level: $e');
+      debugPrint('✗ Error writing liquid level: $e');
       rethrow;
     }
   }
@@ -52,7 +53,7 @@ class LiquidLevelService {
       }
       return null;
     } catch (e) {
-      print('✗ Error reading liquid level: $e');
+      debugPrint('✗ Error reading liquid level: $e');
       rethrow;
     }
   }
@@ -81,10 +82,12 @@ class LiquidLevelService {
           lastUpdated: DateTime.now(),
         );
         await writeLiquidLevel(updated);
-        print('✓ Liquid level updated to: ${newLevel.toStringAsFixed(2)}ml');
+        debugPrint(
+          '✓ Liquid level updated to: ${newLevel.toStringAsFixed(2)}ml',
+        );
       }
     } catch (e) {
-      print('✗ Error updating liquid level: $e');
+      debugPrint('✗ Error updating liquid level: $e');
       rethrow;
     }
   }
@@ -93,9 +96,9 @@ class LiquidLevelService {
   static Future<void> deleteLiquidLevel(String bottleId) async {
     try {
       await _db.ref('$_basePath/$bottleId').remove();
-      print('✓ Liquid level record deleted: $bottleId');
+      debugPrint('✓ Liquid level record deleted: $bottleId');
     } catch (e) {
-      print('✗ Error deleting liquid level: $e');
+      debugPrint('✗ Error deleting liquid level: $e');
       rethrow;
     }
   }

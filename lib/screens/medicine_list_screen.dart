@@ -4,7 +4,6 @@ import '../firebase_operations.dart';
 import '../models/medicine_history.dart';
 import 'add_medicine_screen.dart';
 import 'dart:async';
-import '../services/notification_service.dart';
 
 class MedicineListScreen extends StatefulWidget {
   final List<Medicine> medicines;
@@ -112,7 +111,7 @@ class _MedicineListScreenState extends State<MedicineListScreen> {
       });
       _scheduleDoseTimers();
     } catch (e) {
-      print('Error loading today history: $e');
+      debugPrint('Error loading today history: $e');
     }
   }
 
@@ -129,63 +128,10 @@ class _MedicineListScreenState extends State<MedicineListScreen> {
     _clearDoseTimers();
     final now = DateTime.now();
     for (final entry in _todayDoseEntries) {
-      // Ensure OS-level notifications are scheduled for this entry (cancel/reschedule)
-      try {
-        final todays = _todayHistory[entry.medicine.id] ?? [];
-        final takenForDose = todays
-            .where((h) => h.status == 'taken' && h.doseIndex == entry.doseIndex)
-            .length;
-        final missedForDose = todays
-            .where(
-              (h) => h.status == 'missed' && h.doseIndex == entry.doseIndex,
-            )
-            .length;
-        if ((takenForDose + missedForDose) == 0) {
-          final tStart = entry.scheduledDateTime;
-          final beforeAlert = tStart.subtract(const Duration(minutes: 1));
-          final alert1 = tStart.add(const Duration(minutes: 3));
-          final alert2 = tStart.add(const Duration(minutes: 7));
-          final nowDt = DateTime.now();
-          await NotificationService().cancelNotification(entry.notificationId);
-          await NotificationService().cancelNotification(
-            entry.notificationId + 1,
-          );
-          await NotificationService().cancelNotification(
-            entry.notificationId + 2,
-          );
-          if (nowDt.isBefore(beforeAlert)) {
-            await NotificationService().scheduleNotification(
-              entry.notificationId,
-              'Upcoming Dose',
-              '${entry.medicine.name} in 1 minute',
-              beforeAlert,
-            );
-          }
-          if (nowDt.isBefore(alert1)) {
-            await NotificationService().scheduleNotification(
-              entry.notificationId + 1,
-              'Dose Reminder',
-              '${entry.medicine.name} – please take your dose.',
-              alert1,
-            );
-          }
-          if (nowDt.isBefore(alert2)) {
-            await NotificationService().scheduleNotification(
-              entry.notificationId + 2,
-              'Final Reminder',
-              '${entry.medicine.name} – last chance to mark taken.',
-              alert2,
-            );
-          }
-        }
-      } catch (e) {
-        // ignore scheduling errors
-        print('Scheduling error: $e');
-      }
-
       final dt = entry.scheduledDateTime;
       final tStart = dt;
       final tEnd = dt.add(const Duration(minutes: 10));
+      // removed alert-specific timers
       // If dose already taken or missed, skip
       final todays = _todayHistory[entry.medicine.id] ?? [];
       final takenForDose = todays
@@ -234,10 +180,9 @@ class _MedicineListScreenState extends State<MedicineListScreen> {
         }
       } else if (now.isAtSameMomentAs(tStart) ||
           (now.isAfter(tStart) && now.isBefore(tEnd))) {
-        // We're in the window, schedule missed at tEnd
+        // We're in the window, schedule missed at tEnd and remaining snackbars
         final dur2 = tEnd.difference(now);
         if (dur2.isNegative == false) {
-          // in-window reminders handled by OS-scheduled notifications
           _doseTimers.add(
             Timer(dur2, () async {
               final todays2 = _todayHistory[entry.medicine.id] ?? [];
@@ -285,7 +230,7 @@ class _MedicineListScreenState extends State<MedicineListScreen> {
       await _loadTodayHistory();
       _scheduleDoseTimers();
     } catch (e) {
-      print('Error auto-marking dose missed: $e');
+      debugPrint('Error auto-marking dose missed: $e');
     }
   }
 
@@ -310,7 +255,7 @@ class _MedicineListScreenState extends State<MedicineListScreen> {
       _scheduleDoseTimers();
       if (mounted) setState(() {});
     } catch (e) {
-      print('Error marking dose taken: $e');
+      debugPrint('Error marking dose taken: $e');
     }
   }
 
@@ -335,7 +280,7 @@ class _MedicineListScreenState extends State<MedicineListScreen> {
       _scheduleDoseTimers();
       if (mounted) setState(() {});
     } catch (e) {
-      print('Error marking dose missed: $e');
+      debugPrint('Error marking dose missed: $e');
     }
   }
 
@@ -358,31 +303,28 @@ class _MedicineListScreenState extends State<MedicineListScreen> {
                 'medicines/${medicine.id}',
                 medicineMap,
               );
-              print('✓ Medicine added: ${medicine.name}');
-              if (mounted) {
-                // Show snackbar
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('${medicine.name} added successfully'),
-                    backgroundColor: Colors.green,
-                    duration: const Duration(seconds: 2),
-                  ),
-                );
-                // Wait for snackbar and Firebase sync
-                await Future.delayed(const Duration(milliseconds: 500));
-                if (mounted) {
-                  Navigator.of(context).pop();
-                  // Rebuild dose entries when returning
-                  _buildDoseEntries();
-                }
-              }
+              debugPrint('✓ Medicine added: ${medicine.name}');
+              if (!context.mounted) return;
+              // Show snackbar
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('${medicine.name} added successfully'),
+                  backgroundColor: Colors.green,
+                  duration: const Duration(seconds: 2),
+                ),
+              );
+              // Wait for snackbar and Firebase sync
+              await Future.delayed(const Duration(milliseconds: 500));
+              if (!context.mounted) return;
+              Navigator.of(context).pop();
+              // Rebuild dose entries when returning
+              _buildDoseEntries();
             } catch (e) {
-              print('Error adding medicine: $e');
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Error adding medicine: $e')),
-                );
-              }
+              debugPrint('Error adding medicine: $e');
+              if (!context.mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('Error adding medicine: $e')),
+              );
             }
           },
         ),
@@ -402,33 +344,28 @@ class _MedicineListScreenState extends State<MedicineListScreen> {
                 'medicines/${updatedMedicine.id}',
                 medicineMap,
               );
-              print('✓ Medicine updated: ${updatedMedicine.name}');
-              if (mounted) {
-                // Show snackbar
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(
-                      '${updatedMedicine.name} updated successfully',
-                    ),
-                    backgroundColor: Colors.green,
-                    duration: const Duration(seconds: 2),
-                  ),
-                );
-                // Wait for snackbar and Firebase sync
-                await Future.delayed(const Duration(milliseconds: 500));
-                if (mounted) {
-                  Navigator.of(context).pop();
-                  // Rebuild dose entries when returning
-                  _buildDoseEntries();
-                }
-              }
+              debugPrint('✓ Medicine updated: ${updatedMedicine.name}');
+              if (!context.mounted) return;
+              // Show snackbar
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('${updatedMedicine.name} updated successfully'),
+                  backgroundColor: Colors.green,
+                  duration: const Duration(seconds: 2),
+                ),
+              );
+              // Wait for snackbar and Firebase sync
+              await Future.delayed(const Duration(milliseconds: 500));
+              if (!context.mounted) return;
+              Navigator.of(context).pop();
+              // Rebuild dose entries when returning
+              _buildDoseEntries();
             } catch (e) {
-              print('Error updating medicine: $e');
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Error updating medicine: $e')),
-                );
-              }
+              debugPrint('Error updating medicine: $e');
+              if (!context.mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('Error updating medicine: $e')),
+              );
             }
           },
         ),
@@ -520,7 +457,7 @@ class _MedicineListScreenState extends State<MedicineListScreen> {
                               end: Alignment.bottomRight,
                               colors: [
                                 Colors.white,
-                                Colors.blue.shade50.withOpacity(0.3),
+                                Colors.blue.shade50.withValues(alpha: 0.3),
                               ],
                             ),
                           ),
@@ -546,7 +483,9 @@ class _MedicineListScreenState extends State<MedicineListScreen> {
                                     borderRadius: BorderRadius.circular(12),
                                     boxShadow: [
                                       BoxShadow(
-                                        color: Colors.blue.withOpacity(0.2),
+                                        color: Colors.blue.withValues(
+                                          alpha: 0.2,
+                                        ),
                                         blurRadius: 4,
                                         offset: const Offset(0, 2),
                                       ),

@@ -83,7 +83,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         });
       }
     } catch (e) {
-      print('Error generating health data: $e');
+      debugPrint('Error generating health data: $e');
     }
   }
 
@@ -102,13 +102,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
             _phoneController.text = user['phone'] ?? '';
             _isLoading = false;
           });
-          print('✓ Profile loaded: ${user['email']}');
+          debugPrint('✓ Profile loaded: ${user['email']}');
         }
       } else {
         setState(() => _isLoading = false);
       }
     } catch (e) {
-      print('Error loading profile: $e');
+      debugPrint('Error loading profile: $e');
       setState(() => _isLoading = false);
     }
   }
@@ -131,7 +131,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       };
 
       await FirebaseOperations.writeData('users/$_userId', userData);
-
+      if (!mounted) return;
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -153,6 +153,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove('userKey');
+      if (!mounted) return;
       if (mounted) {
         Navigator.of(
           context,
@@ -174,7 +175,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         await _generateHealthData();
       });
     } catch (e) {
-      print('Error setting up history listener: $e');
+      debugPrint('Error setting up history listener: $e');
     }
   }
 
@@ -205,7 +206,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     borderRadius: BorderRadius.circular(50),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.blue.withOpacity(0.3),
+                        color: Colors.blue.withValues(alpha: 0.3),
                         blurRadius: 12,
                         offset: const Offset(0, 6),
                       ),
@@ -283,7 +284,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               borderRadius: BorderRadius.circular(16),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.blue.withOpacity(0.08),
+                  color: Colors.blue.withValues(alpha: 0.08),
                   blurRadius: 12,
                   offset: const Offset(0, 2),
                 ),
@@ -303,7 +304,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     end: Alignment.bottomRight,
                     colors: [
                       Colors.blue.shade50,
-                      Colors.blue.shade100.withOpacity(0.25),
+                      Colors.blue.shade100.withValues(alpha: 0.25),
                     ],
                   ),
                   border: Border.all(color: Colors.blue.shade100, width: 1),
@@ -376,7 +377,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 end: Alignment.bottomRight,
                 colors: [
                   Colors.green.shade50,
-                  Colors.green.shade100.withOpacity(0.3),
+                  Colors.green.shade100.withValues(alpha: 0.3),
                 ],
               ),
               border: Border.all(color: Colors.green.shade200, width: 1.5),

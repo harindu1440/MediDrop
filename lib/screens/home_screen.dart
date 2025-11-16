@@ -4,7 +4,6 @@ import 'dart:async';
 import '../firebase_operations.dart';
 import '../models/medicine.dart';
 import '../models/medicine_history.dart';
-import '../services/notification_service.dart';
 import 'medicine_list_screen.dart';
 import 'profile_screen.dart';
 import 'history_screen.dart';
@@ -48,7 +47,7 @@ class _HomeScreenState extends State<HomeScreen> {
       });
     } catch (e) {
       // ignore: avoid_print
-      print('Error setting up medicines listener: $e');
+      debugPrint('Error setting up medicines listener: $e');
     }
   }
 
@@ -79,7 +78,7 @@ class _HomeScreenState extends State<HomeScreen> {
       // Reschedule dose timers when history changes
       _scheduleDoseTimers();
     } catch (e) {
-      print('Error loading today history: $e');
+      debugPrint('Error loading today history: $e');
     }
   }
 
@@ -135,76 +134,6 @@ class _HomeScreenState extends State<HomeScreen> {
         });
         // Load today's history first so we don't re-schedule reminders for doses already handled
         await _loadTodayHistory();
-        // Ensure scheduled notifications exist for each scheduled dose (cancel/reschedule to avoid duplicates)
-        for (final entry in _todayDoseEntries) {
-          try {
-            final todays = _todayHistory[entry.medicine.id] ?? [];
-            final takenForDose = todays
-                .where(
-                  (h) => h.status == 'taken' && h.doseIndex == entry.doseIndex,
-                )
-                .length;
-            final missedForDose = todays
-                .where(
-                  (h) => h.status == 'missed' && h.doseIndex == entry.doseIndex,
-                )
-                .length;
-            // If this dose for today is already taken/missed, skip scheduling reminder
-            if ((takenForDose + missedForDose) > 0) {
-              continue;
-            }
-            // Schedule OS-level notifications for this dose (so they fire even if app is backgrounded)
-            final tStart = entry.scheduledDateTime;
-            final beforeAlert = tStart.subtract(const Duration(minutes: 1));
-            final alert1 = tStart.add(const Duration(minutes: 3));
-            final alert2 = tStart.add(const Duration(minutes: 7));
-
-            // Cancel any existing scheduled notifications for these ids then schedule new ones
-            try {
-              await NotificationService().cancelNotification(
-                entry.notificationId,
-              );
-              await NotificationService().cancelNotification(
-                entry.notificationId + 1,
-              );
-              await NotificationService().cancelNotification(
-                entry.notificationId + 2,
-              );
-
-              final now = DateTime.now();
-              if (now.isBefore(beforeAlert)) {
-                await NotificationService().scheduleNotification(
-                  entry.notificationId,
-                  'Upcoming Dose',
-                  '${entry.medicine.name} in 1 minute',
-                  beforeAlert,
-                );
-              }
-              if (now.isBefore(alert1)) {
-                await NotificationService().scheduleNotification(
-                  entry.notificationId + 1,
-                  'Dose Reminder',
-                  '${entry.medicine.name} – please take your dose.',
-                  alert1,
-                );
-              }
-              if (now.isBefore(alert2)) {
-                await NotificationService().scheduleNotification(
-                  entry.notificationId + 2,
-                  'Final Reminder',
-                  '${entry.medicine.name} – last chance to mark taken.',
-                  alert2,
-                );
-              }
-            } catch (e) {
-              print('Error scheduling OS notifications: $e');
-            }
-          } catch (e) {
-            print(
-              'Error scheduling reminder for ${entry.medicine.name} dose ${entry.doseIndex}: $e',
-            );
-          }
-        }
         // Sort doses by closeness to now
         _todayDoseEntries.sort((a, b) {
           final aDist = a.scheduledDateTime
@@ -227,7 +156,7 @@ class _HomeScreenState extends State<HomeScreen> {
         });
       }
     } catch (e) {
-      print('Error loading medicines: $e');
+      debugPrint('Error loading medicines: $e');
       setState(() => _isLoading = false);
     }
   }
@@ -248,6 +177,7 @@ class _HomeScreenState extends State<HomeScreen> {
       final dt = entry.scheduledDateTime;
       final tStart = dt;
       final tEnd = dt.add(const Duration(minutes: 10));
+      // removed alert-specific timers
       // If dose already taken or missed, skip
       final todays = _todayHistory[entry.medicine.id] ?? [];
       final takenForDose = todays
@@ -297,12 +227,9 @@ class _HomeScreenState extends State<HomeScreen> {
         }
       } else if (now.isAtSameMomentAs(tStart) ||
           (now.isAfter(tStart) && now.isBefore(tEnd))) {
-        // We're in the active window; schedule missed at tEnd
+        // We're in the active window; schedule missed at tEnd and remaining snackbars
         final dur2 = tEnd.difference(now);
         if (dur2.isNegative == false) {
-          // If we're already in window, schedule remaining in-window alerts
-          // in-window alert times handled by OS scheduler
-          // in-window notifications are scheduled through OS (see scheduling step)
           _doseTimers.add(
             Timer(dur2, () async {
               final todays2 = _todayHistory[entry.medicine.id] ?? [];
@@ -376,7 +303,7 @@ class _HomeScreenState extends State<HomeScreen> {
       _scheduleDoseTimers();
       if (mounted) setState(() {});
     } catch (e) {
-      print('Error marking dose taken: $e');
+      debugPrint('Error marking dose taken: $e');
     }
   }
 
@@ -401,7 +328,7 @@ class _HomeScreenState extends State<HomeScreen> {
       _scheduleDoseTimers();
       if (mounted) setState(() {});
     } catch (e) {
-      print('Error marking dose missed: $e');
+      debugPrint('Error marking dose missed: $e');
     }
   }
 
@@ -409,7 +336,7 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       // Remove node from database
       await FirebaseOperations.deleteData('medicines/$medicineId');
-      print('✓ Medicine deleted: $medicineId');
+      debugPrint('✓ Medicine deleted: $medicineId');
 
       // Force reload medicines after delete
       await _loadMedicines();
@@ -419,7 +346,7 @@ class _HomeScreenState extends State<HomeScreen> {
       // Refresh dashboard immediately
       if (mounted) setState(() {});
     } catch (e) {
-      print('Error deleting medicine: $e');
+      debugPrint('Error deleting medicine: $e');
       if (mounted) {
         ScaffoldMessenger.of(
           context,
@@ -443,7 +370,7 @@ class _HomeScreenState extends State<HomeScreen> {
         ).showSnackBar(const SnackBar(content: Text('Wash recorded')));
       }
     } catch (e) {
-      print('Error recording wash: $e');
+      debugPrint('Error recording wash: $e');
       if (mounted) {
         ScaffoldMessenger.of(
           context,
@@ -487,12 +414,12 @@ class _HomeScreenState extends State<HomeScreen> {
                           borderRadius: BorderRadius.circular(18),
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.blue.withOpacity(0.35),
+                              color: Colors.blue.withValues(alpha: 0.35),
                               blurRadius: 12,
                               offset: const Offset(0, 6),
                             ),
                             BoxShadow(
-                              color: Colors.blue.withOpacity(0.1),
+                              color: Colors.blue.withValues(alpha: 0.1),
                               blurRadius: 24,
                               offset: const Offset(0, 12),
                             ),
@@ -528,7 +455,9 @@ class _HomeScreenState extends State<HomeScreen> {
                                         'Smart Liquid Dosage System',
                                         style: TextStyle(
                                           fontSize: 13,
-                                          color: Colors.white.withOpacity(0.95),
+                                          color: Colors.white.withValues(
+                                            alpha: 0.95,
+                                          ),
                                           fontWeight: FontWeight.w500,
                                           letterSpacing: 0.3,
                                         ),
@@ -541,10 +470,12 @@ class _HomeScreenState extends State<HomeScreen> {
                                   width: 44,
                                   height: 44,
                                   decoration: BoxDecoration(
-                                    color: Colors.white.withOpacity(0.2),
+                                    color: Colors.white.withValues(alpha: 0.2),
                                     borderRadius: BorderRadius.circular(12),
                                     border: Border.all(
-                                      color: Colors.white.withOpacity(0.3),
+                                      color: Colors.white.withValues(
+                                        alpha: 0.3,
+                                      ),
                                       width: 1.5,
                                     ),
                                   ),
@@ -562,10 +493,10 @@ class _HomeScreenState extends State<HomeScreen> {
                                 vertical: 6,
                               ),
                               decoration: BoxDecoration(
-                                color: Colors.white.withOpacity(0.15),
+                                color: Colors.white.withValues(alpha: 0.15),
                                 borderRadius: BorderRadius.circular(8),
                                 border: Border.all(
-                                  color: Colors.white.withOpacity(0.25),
+                                  color: Colors.white.withValues(alpha: 0.25),
                                   width: 1,
                                 ),
                               ),
@@ -573,7 +504,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                 '✓ All medicines on track',
                                 style: TextStyle(
                                   fontSize: 12,
-                                  color: Colors.white.withOpacity(0.9),
+                                  color: Colors.white.withValues(alpha: 0.9),
                                   fontWeight: FontWeight.w600,
                                 ),
                               ),
@@ -590,7 +521,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           height: 100,
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
-                            color: Colors.white.withOpacity(0.05),
+                            color: Colors.white.withValues(alpha: 0.05),
                           ),
                         ),
                       ),
@@ -602,7 +533,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           height: 80,
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
-                            color: Colors.white.withOpacity(0.05),
+                            color: Colors.white.withValues(alpha: 0.05),
                           ),
                         ),
                       ),
@@ -850,7 +781,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               end: Alignment.bottomRight,
                               colors: [
                                 Colors.white,
-                                Colors.blue.shade50.withOpacity(0.3),
+                                Colors.blue.shade50.withValues(alpha: 0.3),
                               ],
                             ),
                           ),
@@ -876,7 +807,9 @@ class _HomeScreenState extends State<HomeScreen> {
                                     borderRadius: BorderRadius.circular(12),
                                     boxShadow: [
                                       BoxShadow(
-                                        color: Colors.blue.withOpacity(0.2),
+                                        color: Colors.blue.withValues(
+                                          alpha: 0.2,
+                                        ),
                                         blurRadius: 4,
                                         offset: const Offset(0, 2),
                                       ),
@@ -1067,6 +1000,7 @@ class _HomeScreenState extends State<HomeScreen> {
         backgroundColor: Colors.blue.shade600,
         elevation: 0,
         automaticallyImplyLeading: false,
+        actions: const [],
       ),
       body: pages[_selectedIndex],
       bottomNavigationBar: BottomNavigationBar(
@@ -1131,13 +1065,16 @@ class _StatCard extends StatelessWidget {
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [color.withOpacity(0.08), color.withOpacity(0.02)],
+          colors: [
+            color.withValues(alpha: 0.08),
+            color.withValues(alpha: 0.02),
+          ],
         ),
-        border: Border.all(color: color.withOpacity(0.4), width: 1.5),
+        border: Border.all(color: color.withValues(alpha: 0.4), width: 1.5),
         borderRadius: BorderRadius.circular(14),
         boxShadow: [
           BoxShadow(
-            color: color.withOpacity(0.1),
+            color: color.withValues(alpha: 0.1),
             blurRadius: 6,
             offset: const Offset(0, 2),
           ),
@@ -1150,7 +1087,7 @@ class _StatCard extends StatelessWidget {
             width: 50,
             height: 50,
             decoration: BoxDecoration(
-              color: color.withOpacity(0.15),
+              color: color.withValues(alpha: 0.15),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Icon(icon, color: color, size: 28),

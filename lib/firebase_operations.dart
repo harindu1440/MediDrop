@@ -1,4 +1,5 @@
 import 'package:firebase_database/firebase_database.dart';
+import 'package:flutter/foundation.dart';
 
 class FirebaseOperations {
   static final FirebaseDatabase _db = FirebaseDatabase.instance;
@@ -8,13 +9,13 @@ class FirebaseOperations {
     try {
       DatabaseReference dbRef = _db.ref(path);
       await dbRef.set(data);
-      print('✓ Data written successfully to: $path');
-      print('  Data: $data');
+      debugPrint('✓ Data written successfully to: $path');
+      debugPrint('  Data: $data');
     } catch (e) {
-      print('✗ Error writing to $path:');
-      print('  Error: $e');
+      debugPrint('✗ Error writing to $path:');
+      debugPrint('  Error: $e');
       if (e.toString().contains('PERMISSION_DENIED')) {
-        print('  → Check your Realtime Database Rules!');
+        debugPrint('  → Check your Realtime Database Rules!');
       }
       rethrow;
     }
@@ -23,22 +24,22 @@ class FirebaseOperations {
   /// Test Firebase connection
   static Future<void> testConnection() async {
     try {
-      print('🔍 Testing Firebase connection...');
-      print('📍 Database URL: ${_db.databaseURL}');
-      print('📍 Reference URL: ${_db.ref().toString()}');
+      debugPrint('🔍 Testing Firebase connection...');
+      debugPrint('📍 Database URL: ${_db.databaseURL}');
+      debugPrint('📍 Reference URL: ${_db.ref().toString()}');
 
       DatabaseReference testRef = _db.ref('.info/connected');
-      print('📍 Test ref: ${testRef.toString()}');
+      debugPrint('📍 Test ref: ${testRef.toString()}');
 
       final snapshot = await testRef.get();
       if (snapshot.exists) {
-        print('✓ Connected to Firebase: ${snapshot.value}');
+        debugPrint('✓ Connected to Firebase: ${snapshot.value}');
       } else {
-        print('✗ Not connected to Firebase');
+        debugPrint('✗ Not connected to Firebase');
       }
     } catch (e) {
-      print('✗ Connection test failed: $e');
-      print('✗ Error details: ${e.runtimeType}');
+      debugPrint('✗ Connection test failed: $e');
+      debugPrint('✗ Error details: ${e.runtimeType}');
     }
   }
 
@@ -48,14 +49,14 @@ class FirebaseOperations {
       DatabaseReference dbRef = _db.ref(path);
       final snapshot = await dbRef.get();
       if (snapshot.exists) {
-        print('✓ Data read from $path: ${snapshot.value}');
+        debugPrint('✓ Data read from $path: ${snapshot.value}');
         return snapshot.value;
       } else {
-        print('✗ No data found at $path');
+        debugPrint('✗ No data found at $path');
         return null;
       }
     } catch (e) {
-      print('✗ Error reading from $path: $e');
+      debugPrint('✗ Error reading from $path: $e');
       rethrow;
     }
   }
@@ -65,9 +66,9 @@ class FirebaseOperations {
     try {
       DatabaseReference dbRef = _db.ref(path);
       await dbRef.remove();
-      print('✓ Data removed successfully from: $path');
+      debugPrint('✓ Data removed successfully from: $path');
     } catch (e) {
-      print('✗ Error removing data at $path: $e');
+      debugPrint('✗ Error removing data at $path: $e');
       rethrow;
     }
   }

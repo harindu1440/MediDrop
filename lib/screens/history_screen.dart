@@ -39,7 +39,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
         setState(() => _isLoading = false);
       }
     } catch (e) {
-      print('Error loading history: $e');
+      debugPrint('Error loading history: $e');
       setState(() => _isLoading = false);
     }
   }
@@ -133,12 +133,14 @@ class _HistoryScreenState extends State<HistoryScreen> {
           try {
             await FirebaseOperations.deleteData('medicine_history');
             deleteSucceeded = true;
-            print('✓ History deleted successfully (attempt ${retries + 1})');
+            debugPrint(
+              '✓ History deleted successfully (attempt ${retries + 1})',
+            );
           } catch (e) {
             retries++;
             if (retries < maxRetries) {
               await Future.delayed(const Duration(milliseconds: 500));
-              print('Retry deleting history... (attempt ${retries + 1})');
+              debugPrint('Retry deleting history... (attempt ${retries + 1})');
             } else {
               rethrow;
             }
@@ -214,7 +216,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                       borderRadius: BorderRadius.circular(18),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.blue.withOpacity(0.12),
+                          color: Colors.blue.withValues(alpha: 0.12),
                           blurRadius: 16,
                           offset: const Offset(0, 4),
                         ),
@@ -234,7 +236,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                             end: Alignment.bottomRight,
                             colors: [
                               Colors.blue.shade50,
-                              Colors.blue.shade100.withOpacity(0.3),
+                              Colors.blue.shade100.withValues(alpha: 0.3),
                             ],
                           ),
                         ),
@@ -261,7 +263,9 @@ class _HistoryScreenState extends State<HistoryScreen> {
                                       borderRadius: BorderRadius.circular(12),
                                       boxShadow: [
                                         BoxShadow(
-                                          color: Colors.blue.withOpacity(0.3),
+                                          color: Colors.blue.withValues(
+                                            alpha: 0.3,
+                                          ),
                                           blurRadius: 8,
                                           offset: const Offset(0, 2),
                                         ),
@@ -306,7 +310,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                                 padding: const EdgeInsets.all(16),
                                 decoration: BoxDecoration(
                                   borderRadius: BorderRadius.circular(14),
-                                  color: Colors.white.withOpacity(0.6),
+                                  color: Colors.white.withValues(alpha: 0.6),
                                   border: Border.all(
                                     color: Colors.blue.shade100,
                                     width: 1,
@@ -489,9 +493,12 @@ class _HistoryScreenState extends State<HistoryScreen> {
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [color.withOpacity(0.08), color.withOpacity(0.03)],
+          colors: [
+            color.withValues(alpha: 0.08),
+            color.withValues(alpha: 0.03),
+          ],
         ),
-        border: Border.all(color: color.withOpacity(0.2), width: 1),
+        border: Border.all(color: color.withValues(alpha: 0.2), width: 1),
       ),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -559,7 +566,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: [Colors.white, statusColor.withOpacity(0.05)],
+            colors: [Colors.white, statusColor.withValues(alpha: 0.05)],
           ),
         ),
         child: Padding(
@@ -571,10 +578,10 @@ class _HistoryScreenState extends State<HistoryScreen> {
                 width: 50,
                 height: 50,
                 decoration: BoxDecoration(
-                  color: statusColor.withOpacity(0.2),
+                  color: statusColor.withValues(alpha: 0.2),
                   borderRadius: BorderRadius.circular(10),
                   border: Border.all(
-                    color: statusColor.withOpacity(0.3),
+                    color: statusColor.withValues(alpha: 0.3),
                     width: 2,
                   ),
                 ),
@@ -630,7 +637,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                     vertical: 6,
                   ),
                   decoration: BoxDecoration(
-                    color: statusColor.withOpacity(0.15),
+                    color: statusColor.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(6),
                   ),
                   child: Text(

@@ -37,9 +37,7 @@ dependencies:
   firebase_core: ^4.2.1
   firebase_database: 12.0.4
   shared_preferences: ^2.1.0
-  flutter_local_notifications: ^13.0.0
-  flutter_native_timezone: ^2.0.0
-  timezone: ^0.9.0
+  # android_alarm_manager_plus removed
 
 dev_dependencies:
   flutter_test:

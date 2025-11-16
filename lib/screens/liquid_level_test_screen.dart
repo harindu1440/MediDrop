@@ -32,7 +32,7 @@ class _LiquidLevelTestScreenState extends State<LiquidLevelTestScreen> {
         });
       }
     } catch (e) {
-      print('Error loading liquid level: $e');
+      debugPrint('Error loading liquid level: $e');
       if (mounted) {
         setState(() => _isLoading = false);
         ScaffoldMessenger.of(
@@ -57,7 +57,7 @@ class _LiquidLevelTestScreenState extends State<LiquidLevelTestScreen> {
         );
       }
     } catch (e) {
-      print('Error updating capacity: $e');
+      debugPrint('Error updating capacity: $e');
       if (mounted) {
         ScaffoldMessenger.of(
           context,

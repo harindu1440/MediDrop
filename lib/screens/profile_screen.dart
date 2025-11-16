@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_database/firebase_database.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:async';
 import '../firebase_operations.dart';
 import '../models/medicine_history.dart';
 
@@ -22,14 +24,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
   // Auto-generated health data
   int _totalMedicines = 0;
   double _adherenceRate = 0.0;
-  int _dosesThisMonth = 0;
-  int _dosesCompletedThisMonth = 0;
+  StreamSubscription<DatabaseEvent>? _historySubscription;
 
   @override
   void initState() {
     super.initState();
     _loadUserProfile();
     _generateHealthData();
+    _setupHistoryListener();
   }
 
   Future<void> _generateHealthData() async {
@@ -47,6 +49,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
         int completed = 0;
         int total = 0;
 
+        // Deduplicate by medicine + date (only count latest entry per day per medicine)
+        final Map<String, MedicineHistory> uniqueByDay = {};
+
         for (var entry in historyData.entries) {
           try {
             final h = MedicineHistory.fromMap(
@@ -56,15 +61,24 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
             // Check if in this month
             if (dt.year == now.year && dt.month == now.month) {
-              total++;
-              if (h.status == 'taken') completed++;
+              final dateKey =
+                  '${h.medicineName}_${dt.year}-${dt.month}-${dt.day}';
+              // Keep the most recent entry for each medicine per day
+              if (!uniqueByDay.containsKey(dateKey) ||
+                  h.dateTaken.isAfter(uniqueByDay[dateKey]!.dateTaken)) {
+                uniqueByDay[dateKey] = h;
+              }
             }
           } catch (_) {}
         }
 
+        // Count unique entries
+        for (var h in uniqueByDay.values) {
+          total++;
+          if (h.status == 'taken') completed++;
+        }
+
         setState(() {
-          _dosesThisMonth = total;
-          _dosesCompletedThisMonth = completed;
           _adherenceRate = total > 0 ? (completed / total * 100) : 0.0;
         });
       }
@@ -148,6 +162,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('Error logging out: $e')));
+    }
+  }
+
+  /// Set up real-time listener for history changes
+  void _setupHistoryListener() {
+    try {
+      final ref = FirebaseDatabase.instance.ref('medicine_history');
+      _historySubscription = ref.onValue.listen((event) async {
+        // On any change, refresh health data
+        await _generateHealthData();
+      });
+    } catch (e) {
+      print('Error setting up history listener: $e');
     }
   }
 
@@ -336,97 +363,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
           const SizedBox(height: 28),
 
-          // Health Statistics Section
-          _buildSectionTitle('Health Statistics'),
           const SizedBox(height: 14),
-          Container(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.purple.withOpacity(0.08),
-                  blurRadius: 12,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            child: Card(
-              elevation: 0,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-              color: Colors.white,
-              child: Container(
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(16),
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      Colors.purple.shade50,
-                      Colors.purple.shade100.withOpacity(0.25),
-                    ],
-                  ),
-                  border: Border.all(color: Colors.purple.shade100, width: 1),
-                ),
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  children: [
-                    _buildStatsRow(
-                      'Medicines',
-                      _totalMedicines.toString(),
-                      Icons.medication_liquid,
-                      Colors.blue,
-                      'Total medicines tracked',
-                    ),
-                    const SizedBox(height: 16),
-                    Divider(
-                      color: Colors.purple.shade100,
-                      thickness: 1,
-                      height: 1,
-                    ),
-                    const SizedBox(height: 16),
-                    _buildStatsRow(
-                      'Adherence',
-                      '${_adherenceRate.toStringAsFixed(0)}%',
-                      Icons.trending_up,
-                      Colors.green,
-                      'Medication compliance',
-                    ),
-                    const SizedBox(height: 16),
-                    Divider(
-                      color: Colors.purple.shade100,
-                      thickness: 1,
-                      height: 1,
-                    ),
-                    const SizedBox(height: 16),
-                    _buildStatsRow(
-                      'This Month',
-                      _dosesThisMonth.toString(),
-                      Icons.calendar_today,
-                      Colors.orange,
-                      'Total doses scheduled',
-                    ),
-                    const SizedBox(height: 16),
-                    Divider(
-                      color: Colors.purple.shade100,
-                      thickness: 1,
-                      height: 1,
-                    ),
-                    const SizedBox(height: 16),
-                    _buildStatsRow(
-                      'Completed',
-                      _dosesCompletedThisMonth.toString(),
-                      Icons.check_circle,
-                      Colors.purple,
-                      'Doses successfully taken',
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 28),
 
           // Health Insights
           _buildSectionTitle('Health Insights'),
@@ -526,120 +463,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
             fontSize: 18,
             fontWeight: FontWeight.bold,
             color: Colors.black87,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildStatCard(
-    String label,
-    String value,
-    IconData icon,
-    Color color,
-  ) {
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(12),
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [color.withOpacity(0.1), color.withOpacity(0.05)],
-        ),
-        border: Border.all(color: color.withOpacity(0.2), width: 1.5),
-      ),
-      padding: const EdgeInsets.all(12),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(icon, color: color, size: 28),
-          const SizedBox(height: 8),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              color: color,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 11,
-              color: Colors.grey.shade600,
-              fontWeight: FontWeight.w500,
-            ),
-            textAlign: TextAlign.center,
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildStatsRow(
-    String label,
-    String value,
-    IconData icon,
-    Color color,
-    String description,
-  ) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        Container(
-          width: 48,
-          height: 48,
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [color.withOpacity(0.3), color.withOpacity(0.5)],
-            ),
-            borderRadius: BorderRadius.circular(12),
-            boxShadow: [
-              BoxShadow(
-                color: color.withOpacity(0.15),
-                blurRadius: 6,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
-          child: Icon(icon, color: Colors.white, size: 26),
-        ),
-        const SizedBox(width: 16),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                label,
-                style: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.black54,
-                  letterSpacing: 0.2,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                value,
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                  color: color,
-                ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                description,
-                style: TextStyle(
-                  fontSize: 11,
-                  color: Colors.grey.shade500,
-                  fontWeight: FontWeight.w400,
-                ),
-              ),
-            ],
           ),
         ),
       ],
@@ -764,6 +587,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _ageController.dispose();
     _emailController.dispose();
     _phoneController.dispose();
+    _historySubscription?.cancel();
     super.dispose();
   }
 }

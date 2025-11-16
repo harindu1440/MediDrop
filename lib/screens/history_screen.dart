@@ -70,86 +70,6 @@ class _HistoryScreenState extends State<HistoryScreen> {
     }
   }
 
-  void _markMedicineTaken(
-    String medicineId,
-    String medicineName,
-    String dosage, {
-    int? doseIndex,
-  }) async {
-    final historyId = DateTime.now().millisecondsSinceEpoch.toString();
-    final medicineHistory = MedicineHistory(
-      id: historyId,
-      medicineId: medicineId,
-      medicineName: medicineName,
-      dosage: dosage,
-      dateTaken: DateTime.now(),
-      status: 'taken',
-      doseIndex: doseIndex,
-    );
-
-    try {
-      await FirebaseOperations.writeData(
-        'medicine_history/$historyId',
-        medicineHistory.toMap(),
-      );
-      print('✓ Marked as taken: $medicineName');
-      await _loadHistory();
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('✓ $medicineName marked as taken!'),
-          backgroundColor: Colors.green,
-          duration: const Duration(seconds: 2),
-        ),
-      );
-    } catch (e) {
-      print('Error marking medicine as taken: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Error: $e')));
-      }
-    }
-
-    // Notification cleanup removed
-  }
-
-  void _markMedicineMissed(
-    String medicineId,
-    String medicineName,
-    String dosage, {
-    int? doseIndex,
-  }) async {
-    final historyId = DateTime.now().millisecondsSinceEpoch.toString();
-    final medicineHistory = MedicineHistory(
-      id: historyId,
-      medicineId: medicineId,
-      medicineName: medicineName,
-      dosage: dosage,
-      dateTaken: DateTime.now(),
-      status: 'missed',
-      doseIndex: doseIndex,
-    );
-
-    try {
-      await FirebaseOperations.writeData(
-        'medicine_history/$historyId',
-        medicineHistory.toMap(),
-      );
-      print('✓ Marked as missed: $medicineName');
-      _loadHistory();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('⚠️ $medicineName marked as missed'),
-          backgroundColor: Colors.orange,
-          duration: const Duration(seconds: 2),
-        ),
-      );
-    } catch (e) {
-      print('Error marking medicine as missed: $e');
-    }
-  }
-
   Color _getStatusColor(String status) {
     switch (status) {
       case 'taken':
@@ -204,16 +124,37 @@ class _HistoryScreenState extends State<HistoryScreen> {
           ),
         );
 
-        // Delete from Firebase
-        await FirebaseOperations.deleteData('medicine_history');
+        // Delete from Firebase with retry logic
+        bool deleteSucceeded = false;
+        int retries = 0;
+        const maxRetries = 3;
 
-        // Wait for Firebase sync
-        await Future.delayed(const Duration(milliseconds: 800));
+        while (!deleteSucceeded && retries < maxRetries) {
+          try {
+            await FirebaseOperations.deleteData('medicine_history');
+            deleteSucceeded = true;
+            print('✓ History deleted successfully (attempt ${retries + 1})');
+          } catch (e) {
+            retries++;
+            if (retries < maxRetries) {
+              await Future.delayed(const Duration(milliseconds: 500));
+              print('Retry deleting history... (attempt ${retries + 1})');
+            } else {
+              rethrow;
+            }
+          }
+        }
+
+        // Wait for Firebase sync and propagation
+        await Future.delayed(const Duration(seconds: 1));
 
         if (!mounted) return;
 
         // Update local state
         setState(() => history = []);
+
+        // Reload from Firebase to confirm deletion
+        await _loadHistory();
 
         if (!mounted) return;
 
@@ -536,30 +477,6 @@ class _HistoryScreenState extends State<HistoryScreen> {
     );
   }
 
-  Widget _buildStatBox(String label, String value, Color color) {
-    return Column(
-      children: [
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 12,
-            color: Colors.grey.shade600,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-        const SizedBox(height: 6),
-        Text(
-          value,
-          style: TextStyle(
-            fontSize: 20,
-            fontWeight: FontWeight.bold,
-            color: color,
-          ),
-        ),
-      ],
-    );
-  }
-
   Widget _buildProgressStatCard(
     String label,
     String value,
@@ -579,25 +496,27 @@ class _HistoryScreenState extends State<HistoryScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(icon, color: color, size: 26),
-          const SizedBox(height: 8),
+          Icon(icon, color: color, size: 24),
+          const SizedBox(height: 6),
           Text(
             value,
             style: TextStyle(
-              fontSize: 18,
+              fontSize: 16,
               fontWeight: FontWeight.bold,
               color: color,
             ),
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 2),
           Text(
             label,
             style: TextStyle(
-              fontSize: 11,
+              fontSize: 10,
               color: Colors.grey.shade600,
               fontWeight: FontWeight.w500,
             ),
             textAlign: TextAlign.center,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
           ),
         ],
       ),
@@ -704,22 +623,26 @@ class _HistoryScreenState extends State<HistoryScreen> {
                 ),
               ),
               // Status Badge
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 6,
-                ),
-                decoration: BoxDecoration(
-                  color: statusColor.withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Text(
-                  item.status.toUpperCase(),
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                    color: statusColor,
-                    letterSpacing: 0.3,
+              Flexible(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: statusColor.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    item.status.toUpperCase(),
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      color: statusColor,
+                      letterSpacing: 0.2,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
               ),

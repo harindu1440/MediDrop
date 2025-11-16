@@ -4,6 +4,7 @@ import '../firebase_operations.dart';
 import '../models/medicine_history.dart';
 import 'add_medicine_screen.dart';
 import 'dart:async';
+import '../services/notification_service.dart';
 
 class MedicineListScreen extends StatefulWidget {
   final List<Medicine> medicines;
@@ -20,7 +21,7 @@ class MedicineListScreen extends StatefulWidget {
 }
 
 class _MedicineListScreenState extends State<MedicineListScreen> {
-  List<_DoseEntry> _todayDoseEntries = [];
+  final List<_DoseEntry> _todayDoseEntries = [];
   Map<String, List<MedicineHistory>> _todayHistory = {};
   final List<Timer> _doseTimers = [];
 
@@ -49,12 +50,18 @@ class _MedicineListScreenState extends State<MedicineListScreen> {
       final med = widget.medicines[medIdx];
 
       final times = med.times.isNotEmpty ? med.times : [med.time];
+      final baseId = med.id.hashCode & 0x7fffffff;
       for (int i = 0; i < times.length; i++) {
         final t = times[i];
         final dt = _parseTimeStringToToday(t);
         if (dt != null) {
           _todayDoseEntries.add(
-            _DoseEntry(medicine: med, scheduledDateTime: dt, doseIndex: i),
+            _DoseEntry(
+              medicine: med,
+              scheduledDateTime: dt,
+              doseIndex: i,
+              notificationId: baseId + i + 100,
+            ),
           );
         }
       }
@@ -118,10 +125,64 @@ class _MedicineListScreenState extends State<MedicineListScreen> {
     _doseTimers.clear();
   }
 
-  void _scheduleDoseTimers() {
+  Future<void> _scheduleDoseTimers() async {
     _clearDoseTimers();
     final now = DateTime.now();
     for (final entry in _todayDoseEntries) {
+      // Ensure OS-level notifications are scheduled for this entry (cancel/reschedule)
+      try {
+        final todays = _todayHistory[entry.medicine.id] ?? [];
+        final takenForDose = todays
+            .where((h) => h.status == 'taken' && h.doseIndex == entry.doseIndex)
+            .length;
+        final missedForDose = todays
+            .where(
+              (h) => h.status == 'missed' && h.doseIndex == entry.doseIndex,
+            )
+            .length;
+        if ((takenForDose + missedForDose) == 0) {
+          final tStart = entry.scheduledDateTime;
+          final beforeAlert = tStart.subtract(const Duration(minutes: 1));
+          final alert1 = tStart.add(const Duration(minutes: 3));
+          final alert2 = tStart.add(const Duration(minutes: 7));
+          final nowDt = DateTime.now();
+          await NotificationService().cancelNotification(entry.notificationId);
+          await NotificationService().cancelNotification(
+            entry.notificationId + 1,
+          );
+          await NotificationService().cancelNotification(
+            entry.notificationId + 2,
+          );
+          if (nowDt.isBefore(beforeAlert)) {
+            await NotificationService().scheduleNotification(
+              entry.notificationId,
+              'Upcoming Dose',
+              '${entry.medicine.name} in 1 minute',
+              beforeAlert,
+            );
+          }
+          if (nowDt.isBefore(alert1)) {
+            await NotificationService().scheduleNotification(
+              entry.notificationId + 1,
+              'Dose Reminder',
+              '${entry.medicine.name} – please take your dose.',
+              alert1,
+            );
+          }
+          if (nowDt.isBefore(alert2)) {
+            await NotificationService().scheduleNotification(
+              entry.notificationId + 2,
+              'Final Reminder',
+              '${entry.medicine.name} – last chance to mark taken.',
+              alert2,
+            );
+          }
+        }
+      } catch (e) {
+        // ignore scheduling errors
+        print('Scheduling error: $e');
+      }
+
       final dt = entry.scheduledDateTime;
       final tStart = dt;
       final tEnd = dt.add(const Duration(minutes: 10));
@@ -143,25 +204,64 @@ class _MedicineListScreenState extends State<MedicineListScreen> {
             if (mounted) setState(() {});
           }),
         );
-      }
-
-      if (now.isBefore(tEnd) && now.isAfter(tStart)) {
-        // We're in the window, schedule next refresh at tEnd
-        final dur = tEnd.difference(now);
-        _doseTimers.add(
-          Timer(dur, () {
-            if (mounted) setState(() {});
-          }),
-        );
-      }
-
-      if (now.isAfter(tEnd)) {
-        // Auto-mark missed if past window
-        final alreadyMarked = (takenForDose + missedForDose) > 0;
-        if (!alreadyMarked) {
-          _markDoseMissedAuto(entry);
+        // 1-minute-before alert handled by OS-scheduled notifications
+        // schedule missed at tEnd
+        final dur2 = tEnd.difference(now);
+        if (dur2.isNegative == false) {
+          // in-window reminders handled by OS-scheduled notifications
+          _doseTimers.add(
+            Timer(dur2, () async {
+              // If still not taken, mark missed
+              final todays2 = _todayHistory[entry.medicine.id] ?? [];
+              final takenNow = todays2
+                  .where(
+                    (h) =>
+                        h.status == 'taken' && h.doseIndex == entry.doseIndex,
+                  )
+                  .length;
+              final missedNow = todays2
+                  .where(
+                    (h) =>
+                        h.status == 'missed' && h.doseIndex == entry.doseIndex,
+                  )
+                  .length;
+              if ((takenNow + missedNow) == 0) {
+                await _markDoseMissedAuto(entry);
+              }
+              if (mounted) setState(() {});
+            }),
+          );
+        }
+      } else if (now.isAtSameMomentAs(tStart) ||
+          (now.isAfter(tStart) && now.isBefore(tEnd))) {
+        // We're in the window, schedule missed at tEnd
+        final dur2 = tEnd.difference(now);
+        if (dur2.isNegative == false) {
+          // in-window reminders handled by OS-scheduled notifications
+          _doseTimers.add(
+            Timer(dur2, () async {
+              final todays2 = _todayHistory[entry.medicine.id] ?? [];
+              final takenNow = todays2
+                  .where(
+                    (h) =>
+                        h.status == 'taken' && h.doseIndex == entry.doseIndex,
+                  )
+                  .length;
+              final missedNow = todays2
+                  .where(
+                    (h) =>
+                        h.status == 'missed' && h.doseIndex == entry.doseIndex,
+                  )
+                  .length;
+              if ((takenNow + missedNow) == 0) {
+                await _markDoseMissedAuto(entry);
+              }
+              if (mounted) setState(() {});
+            }),
+          );
         }
       }
+      // Don't auto-mark immediately for past doses - only via timers
     }
   }
 
@@ -723,10 +823,12 @@ class _DoseEntry {
   final Medicine medicine;
   final DateTime scheduledDateTime;
   final int doseIndex;
+  final int notificationId;
 
   _DoseEntry({
     required this.medicine,
     required this.scheduledDateTime,
     required this.doseIndex,
+    required this.notificationId,
   });
 }

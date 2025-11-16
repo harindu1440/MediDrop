@@ -4,6 +4,7 @@ import 'dart:async';
 import '../firebase_operations.dart';
 import '../models/medicine.dart';
 import '../models/medicine_history.dart';
+import '../services/notification_service.dart';
 import 'medicine_list_screen.dart';
 import 'profile_screen.dart';
 import 'history_screen.dart';
@@ -152,8 +153,52 @@ class _HomeScreenState extends State<HomeScreen> {
             if ((takenForDose + missedForDose) > 0) {
               continue;
             }
+            // Schedule OS-level notifications for this dose (so they fire even if app is backgrounded)
+            final tStart = entry.scheduledDateTime;
+            final beforeAlert = tStart.subtract(const Duration(minutes: 1));
+            final alert1 = tStart.add(const Duration(minutes: 3));
+            final alert2 = tStart.add(const Duration(minutes: 7));
 
-            // Notification scheduling removed
+            // Cancel any existing scheduled notifications for these ids then schedule new ones
+            try {
+              await NotificationService().cancelNotification(
+                entry.notificationId,
+              );
+              await NotificationService().cancelNotification(
+                entry.notificationId + 1,
+              );
+              await NotificationService().cancelNotification(
+                entry.notificationId + 2,
+              );
+
+              final now = DateTime.now();
+              if (now.isBefore(beforeAlert)) {
+                await NotificationService().scheduleNotification(
+                  entry.notificationId,
+                  'Upcoming Dose',
+                  '${entry.medicine.name} in 1 minute',
+                  beforeAlert,
+                );
+              }
+              if (now.isBefore(alert1)) {
+                await NotificationService().scheduleNotification(
+                  entry.notificationId + 1,
+                  'Dose Reminder',
+                  '${entry.medicine.name} – please take your dose.',
+                  alert1,
+                );
+              }
+              if (now.isBefore(alert2)) {
+                await NotificationService().scheduleNotification(
+                  entry.notificationId + 2,
+                  'Final Reminder',
+                  '${entry.medicine.name} – last chance to mark taken.',
+                  alert2,
+                );
+              }
+            } catch (e) {
+              print('Error scheduling OS notifications: $e');
+            }
           } catch (e) {
             print(
               'Error scheduling reminder for ${entry.medicine.name} dose ${entry.doseIndex}: $e',
@@ -221,9 +266,12 @@ class _HomeScreenState extends State<HomeScreen> {
             if (mounted) setState(() {});
           }),
         );
+        // 1-minute-before alert handled via OS-scheduled notification (see scheduling step)
         // schedule missed at tEnd
         final dur2 = tEnd.difference(now);
         if (dur2.isNegative == false) {
+          // in-window alerts are scheduled via OS-level notifications
+          // in-window reminders handled via OS-scheduled notifications (see scheduling step)
           _doseTimers.add(
             Timer(dur2, () async {
               // If still not taken, mark missed
@@ -252,6 +300,9 @@ class _HomeScreenState extends State<HomeScreen> {
         // We're in the active window; schedule missed at tEnd
         final dur2 = tEnd.difference(now);
         if (dur2.isNegative == false) {
+          // If we're already in window, schedule remaining in-window alerts
+          // in-window alert times handled by OS scheduler
+          // in-window notifications are scheduled through OS (see scheduling step)
           _doseTimers.add(
             Timer(dur2, () async {
               final todays2 = _todayHistory[entry.medicine.id] ?? [];

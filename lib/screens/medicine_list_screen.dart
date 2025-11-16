@@ -2,16 +2,8 @@ import 'package:flutter/material.dart';
 import '../models/medicine.dart';
 import '../firebase_operations.dart';
 import '../models/medicine_history.dart';
-import '../services/notifications_service.dart';
-
-/// Helper: extract numeric frequency from strings like "2 times" or "2/day"
-int _frequencyCount(String freq) {
-  try {
-    final match = RegExp(r"(\d+)").firstMatch(freq);
-    if (match != null) return int.parse(match.group(0)!);
-  } catch (_) {}
-  return 1;
-}
+import 'add_medicine_screen.dart';
+import 'dart:async';
 
 class MedicineListScreen extends StatefulWidget {
   final List<Medicine> medicines;
@@ -28,12 +20,64 @@ class MedicineListScreen extends StatefulWidget {
 }
 
 class _MedicineListScreenState extends State<MedicineListScreen> {
+  List<_DoseEntry> _todayDoseEntries = [];
   Map<String, List<MedicineHistory>> _todayHistory = {};
+  final List<Timer> _doseTimers = [];
 
   @override
   void initState() {
     super.initState();
+    _buildDoseEntries();
     _loadTodayHistory();
+  }
+
+  @override
+  void didUpdateWidget(MedicineListScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Rebuild dose entries when medicines list changes
+    if (oldWidget.medicines != widget.medicines) {
+      _buildDoseEntries();
+    }
+  }
+
+  void _buildDoseEntries() {
+    _todayDoseEntries.clear();
+
+    // In the Medicines tab, show ALL medicines regardless of the day
+    // The filtering by day is only for the Dashboard
+    for (int medIdx = 0; medIdx < widget.medicines.length; medIdx++) {
+      final med = widget.medicines[medIdx];
+
+      final times = med.times.isNotEmpty ? med.times : [med.time];
+      for (int i = 0; i < times.length; i++) {
+        final t = times[i];
+        final dt = _parseTimeStringToToday(t);
+        if (dt != null) {
+          _todayDoseEntries.add(
+            _DoseEntry(medicine: med, scheduledDateTime: dt, doseIndex: i),
+          );
+        }
+      }
+    }
+    if (mounted) setState(() {});
+    _scheduleDoseTimers();
+  }
+
+  DateTime? _parseTimeStringToToday(String timeStr) {
+    try {
+      final parts = timeStr.split(' ');
+      if (parts.length != 2) return null;
+      final hm = parts[0].split(':');
+      int hour = int.parse(hm[0]);
+      final minute = int.parse(hm[1]);
+      final period = parts[1];
+      if (period == 'PM' && hour != 12) hour += 12;
+      if (period == 'AM' && hour == 12) hour = 0;
+      final now = DateTime.now();
+      return DateTime(now.year, now.month, now.day, hour, minute);
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<void> _loadTodayHistory() async {
@@ -59,230 +103,575 @@ class _MedicineListScreenState extends State<MedicineListScreen> {
       setState(() {
         _todayHistory = grouped;
       });
+      _scheduleDoseTimers();
     } catch (e) {
       print('Error loading today history: $e');
     }
   }
 
+  void _clearDoseTimers() {
+    for (final t in _doseTimers) {
+      try {
+        t.cancel();
+      } catch (_) {}
+    }
+    _doseTimers.clear();
+  }
+
+  void _scheduleDoseTimers() {
+    _clearDoseTimers();
+    final now = DateTime.now();
+    for (final entry in _todayDoseEntries) {
+      final dt = entry.scheduledDateTime;
+      final tStart = dt;
+      final tEnd = dt.add(const Duration(minutes: 10));
+      // If dose already taken or missed, skip
+      final todays = _todayHistory[entry.medicine.id] ?? [];
+      final takenForDose = todays
+          .where((h) => h.status == 'taken' && h.doseIndex == entry.doseIndex)
+          .length;
+      final missedForDose = todays
+          .where((h) => h.status == 'missed' && h.doseIndex == entry.doseIndex)
+          .length;
+      if ((takenForDose + missedForDose) > 0) continue;
+
+      if (now.isBefore(tStart)) {
+        // schedule at tStart to refresh UI (show Take button)
+        final dur = tStart.difference(now);
+        _doseTimers.add(
+          Timer(dur, () {
+            if (mounted) setState(() {});
+          }),
+        );
+      }
+
+      if (now.isBefore(tEnd) && now.isAfter(tStart)) {
+        // We're in the window, schedule next refresh at tEnd
+        final dur = tEnd.difference(now);
+        _doseTimers.add(
+          Timer(dur, () {
+            if (mounted) setState(() {});
+          }),
+        );
+      }
+
+      if (now.isAfter(tEnd)) {
+        // Auto-mark missed if past window
+        final alreadyMarked = (takenForDose + missedForDose) > 0;
+        if (!alreadyMarked) {
+          _markDoseMissedAuto(entry);
+        }
+      }
+    }
+  }
+
+  Future<void> _markDoseMissedAuto(_DoseEntry entry) async {
+    final medicine = entry.medicine;
+    final historyId = DateTime.now().millisecondsSinceEpoch.toString();
+    final entryObj = MedicineHistory(
+      id: historyId,
+      medicineId: medicine.id,
+      medicineName: medicine.name,
+      dosage: medicine.dosage,
+      dateTaken: DateTime.now(),
+      status: 'missed',
+      doseIndex: entry.doseIndex,
+    );
+    try {
+      await FirebaseOperations.writeData(
+        'medicine_history/$historyId',
+        entryObj.toMap(),
+      );
+      await _loadTodayHistory();
+      _scheduleDoseTimers();
+    } catch (e) {
+      print('Error auto-marking dose missed: $e');
+    }
+  }
+
+  Future<void> _markDoseTaken(_DoseEntry entry) async {
+    final medicine = entry.medicine;
+    final historyId = DateTime.now().millisecondsSinceEpoch.toString();
+    final entryObj = MedicineHistory(
+      id: historyId,
+      medicineId: medicine.id,
+      medicineName: medicine.name,
+      dosage: medicine.dosage,
+      dateTaken: DateTime.now(),
+      status: 'taken',
+      doseIndex: entry.doseIndex,
+    );
+    try {
+      await FirebaseOperations.writeData(
+        'medicine_history/$historyId',
+        entryObj.toMap(),
+      );
+      await _loadTodayHistory();
+      _scheduleDoseTimers();
+      if (mounted) setState(() {});
+    } catch (e) {
+      print('Error marking dose taken: $e');
+    }
+  }
+
+  Future<void> _markDoseMissed(_DoseEntry entry) async {
+    final medicine = entry.medicine;
+    final historyId = DateTime.now().millisecondsSinceEpoch.toString();
+    final entryObj = MedicineHistory(
+      id: historyId,
+      medicineId: medicine.id,
+      medicineName: medicine.name,
+      dosage: medicine.dosage,
+      dateTaken: DateTime.now(),
+      status: 'missed',
+      doseIndex: entry.doseIndex,
+    );
+    try {
+      await FirebaseOperations.writeData(
+        'medicine_history/$historyId',
+        entryObj.toMap(),
+      );
+      await _loadTodayHistory();
+      _scheduleDoseTimers();
+      if (mounted) setState(() {});
+    } catch (e) {
+      print('Error marking dose missed: $e');
+    }
+  }
+
+  String _formatTimeOfDay(DateTime dt) {
+    final hour = dt.hour;
+    final minute = dt.minute.toString().padLeft(2, '0');
+    final period = hour >= 12 ? 'PM' : 'AM';
+    final hour12 = hour == 0 ? 12 : (hour > 12 ? hour - 12 : hour);
+    return '$hour12:$minute $period';
+  }
+
+  void _openAddMedicineScreen() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => AddMedicineScreen(
+          onMedicineAdded: (medicine) async {
+            try {
+              final medicineMap = medicine.toMap();
+              await FirebaseOperations.writeData(
+                'medicines/${medicine.id}',
+                medicineMap,
+              );
+              print('✓ Medicine added: ${medicine.name}');
+              if (mounted) {
+                // Show snackbar
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('${medicine.name} added successfully'),
+                    backgroundColor: Colors.green,
+                    duration: const Duration(seconds: 2),
+                  ),
+                );
+                // Wait for snackbar and Firebase sync
+                await Future.delayed(const Duration(milliseconds: 500));
+                if (mounted) {
+                  Navigator.of(context).pop();
+                  // Rebuild dose entries when returning
+                  _buildDoseEntries();
+                }
+              }
+            } catch (e) {
+              print('Error adding medicine: $e');
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Error adding medicine: $e')),
+                );
+              }
+            }
+          },
+        ),
+      ),
+    );
+  }
+
+  void _openEditMedicineScreen(Medicine medicine) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => AddMedicineScreen(
+          medicineToEdit: medicine,
+          onMedicineAdded: (updatedMedicine) async {
+            try {
+              final medicineMap = updatedMedicine.toMap();
+              await FirebaseOperations.writeData(
+                'medicines/${updatedMedicine.id}',
+                medicineMap,
+              );
+              print('✓ Medicine updated: ${updatedMedicine.name}');
+              if (mounted) {
+                // Show snackbar
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      '${updatedMedicine.name} updated successfully',
+                    ),
+                    backgroundColor: Colors.green,
+                    duration: const Duration(seconds: 2),
+                  ),
+                );
+                // Wait for snackbar and Firebase sync
+                await Future.delayed(const Duration(milliseconds: 500));
+                if (mounted) {
+                  Navigator.of(context).pop();
+                  // Rebuild dose entries when returning
+                  _buildDoseEntries();
+                }
+              }
+            } catch (e) {
+              print('Error updating medicine: $e');
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Error updating medicine: $e')),
+                );
+              }
+            }
+          },
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    return widget.medicines.isEmpty
-        ? Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  Icons.medication_liquid,
-                  size: 80,
-                  color: Colors.grey.shade300,
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  'No Medicines Found',
-                  style: TextStyle(
-                    fontSize: 18,
-                    color: Colors.grey.shade600,
-                    fontWeight: FontWeight.bold,
+    return Scaffold(
+      body: widget.medicines.isEmpty
+          ? Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.medication_liquid,
+                    size: 80,
+                    color: Colors.grey.shade300,
                   ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'No Medicines Found',
+                    style: TextStyle(
+                      fontSize: 18,
+                      color: Colors.grey.shade600,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Add your first medicine to get started',
+                    style: TextStyle(fontSize: 14, color: Colors.grey.shade500),
+                  ),
+                ],
+              ),
+            )
+          : SingleChildScrollView(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  'Add your first medicine to get started',
-                  style: TextStyle(fontSize: 14, color: Colors.grey.shade500),
-                ),
-              ],
-            ),
-          )
-        : ListView.builder(
-            padding: const EdgeInsets.all(12),
-            itemCount: widget.medicines.length,
-            itemBuilder: (context, index) {
-              final medicine = widget.medicines[index];
+                child: Column(
+                  children: List.generate(_todayDoseEntries.length, (index) {
+                    final entry = _todayDoseEntries[index];
+                    final medicine = entry.medicine;
+                    final now = DateTime.now();
+                    final T = entry.scheduledDateTime;
+                    final windowEnd = T.add(const Duration(minutes: 10));
 
-              final todays = _todayHistory[medicine.id] ?? [];
-              final takenCount = todays
-                  .where((h) => h.status == 'taken')
-                  .length;
-              final missedCount = todays
-                  .where((h) => h.status == 'missed')
-                  .length;
-              final freq = _frequencyCount(medicine.frequency);
-              final allowActions = (takenCount + missedCount) < freq;
+                    final todays = _todayHistory[medicine.id] ?? [];
+                    final isTaken = todays
+                        .where(
+                          (h) =>
+                              h.status == 'taken' &&
+                              h.doseIndex == entry.doseIndex,
+                        )
+                        .isNotEmpty;
+                    final isMissed = todays
+                        .where(
+                          (h) =>
+                              h.status == 'missed' &&
+                              h.doseIndex == entry.doseIndex,
+                        )
+                        .isNotEmpty;
+                    final showTakeButton =
+                        !isTaken &&
+                        !isMissed &&
+                        (now.isAtSameMomentAs(T) ||
+                            (now.isAfter(T) && now.isBefore(windowEnd)));
+                    final showToBeTaken =
+                        !isTaken && !isMissed && now.isBefore(T);
+                    final showMissed =
+                        !isTaken && (isMissed || now.isAfter(windowEnd));
 
-              return Card(
-                margin: const EdgeInsets.only(bottom: 12),
-                elevation: 2,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 60,
-                        height: 60,
-                        decoration: BoxDecoration(
-                          color: Theme.of(
-                            context,
-                          ).colorScheme.primary.withOpacity(0.12),
-                          borderRadius: BorderRadius.circular(10),
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 14),
+                      child: Card(
+                        elevation: 2,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
                         ),
-                        child: Icon(
-                          Icons.medication_liquid,
-                          color: Theme.of(context).colorScheme.primary,
-                          size: 32,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              medicine.name,
-                              style: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                              ),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(12),
+                            gradient: LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: [
+                                Colors.white,
+                                Colors.blue.shade50.withOpacity(0.3),
+                              ],
                             ),
-                            const SizedBox(height: 4),
-                            Text(
-                              'Dosage: ${medicine.dosage}',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.grey.shade700,
-                              ),
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 12,
                             ),
-                            const SizedBox(height: 4),
-                            Row(
+                            child: Row(
                               children: [
-                                Icon(
-                                  Icons.schedule,
-                                  size: 12,
-                                  color: Theme.of(context).colorScheme.primary,
+                                Container(
+                                  width: 56,
+                                  height: 56,
+                                  decoration: BoxDecoration(
+                                    gradient: LinearGradient(
+                                      begin: Alignment.topLeft,
+                                      end: Alignment.bottomRight,
+                                      colors: [
+                                        Colors.blue.shade200,
+                                        Colors.blue.shade400,
+                                      ],
+                                    ),
+                                    borderRadius: BorderRadius.circular(12),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.blue.withOpacity(0.2),
+                                        blurRadius: 4,
+                                        offset: const Offset(0, 2),
+                                      ),
+                                    ],
+                                  ),
+                                  child: const Icon(
+                                    Icons.medication_liquid,
+                                    color: Colors.white,
+                                    size: 30,
+                                  ),
                                 ),
-                                const SizedBox(width: 4),
-                                Text(
-                                  medicine.time,
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.primary,
-                                    fontWeight: FontWeight.w600,
+                                const SizedBox(width: 14),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        medicine.name,
+                                        style: const TextStyle(
+                                          fontSize: 15,
+                                          fontWeight: FontWeight.w700,
+                                          letterSpacing: 0.2,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 6),
+                                      Row(
+                                        children: [
+                                          Text(
+                                            'Dosage: ${medicine.dosage}',
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color: Colors.grey.shade700,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 12),
+                                          Text(
+                                            _formatTimeOfDay(T),
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color: Colors.blue.shade600,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 6),
+                                      // Weekly days display
+                                      Text(
+                                        'Days: ${medicine.weeklyDays.map((d) => d.substring(0, 3)).join(", ")}',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: Colors.grey.shade600,
+                                          fontStyle: FontStyle.italic,
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
                                 const SizedBox(width: 8),
-                                Icon(
-                                  Icons.repeat,
-                                  size: 12,
-                                  color: Colors.green,
-                                ),
-                                const SizedBox(width: 4),
-                                Text(
-                                  medicine.frequency,
-                                  style: const TextStyle(
-                                    fontSize: 12,
-                                    color: Colors.green,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-
-                      // Actions column: Taken / Missed text buttons and badges
-                      Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          if (allowActions)
-                            Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                TextButton(
-                                  style: TextButton.styleFrom(
-                                    minimumSize: const Size(72, 36),
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 8,
-                                    ),
-                                  ),
-                                  onPressed: () async {
-                                    await _markAsTaken(medicine);
-                                    await _loadTodayHistory();
-                                  },
-                                  child: const Text(
-                                    'Taken',
-                                    style: TextStyle(color: Colors.green),
-                                  ),
-                                ),
-                                const SizedBox(width: 6),
-                                TextButton(
-                                  style: TextButton.styleFrom(
-                                    minimumSize: const Size(72, 36),
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 8,
-                                    ),
-                                  ),
-                                  onPressed: () async {
-                                    await _markAsMissed(medicine);
-                                    await _loadTodayHistory();
-                                  },
-                                  child: const Text(
-                                    'Missed',
-                                    style: TextStyle(color: Colors.red),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          const SizedBox(height: 4),
-                          if (takenCount > 0)
-                            Chip(
-                              label: Text(
-                                'Taken${takenCount > 1 ? ' x$takenCount' : ''}',
-                              ),
-                              backgroundColor: Colors.green.shade100,
-                              labelStyle: const TextStyle(color: Colors.green),
-                            ),
-                          if (missedCount > 0)
-                            Chip(
-                              label: Text(
-                                'Missed${missedCount > 1 ? ' x$missedCount' : ''}',
-                              ),
-                              backgroundColor: Colors.red.shade100,
-                              labelStyle: const TextStyle(color: Colors.red),
-                            ),
-
-                          // Delete popup remains for full actions
-                          PopupMenuButton<String>(
-                            onSelected: (value) {
-                              if (value == 'delete') {
-                                _showDeleteDialog(context, medicine);
-                              }
-                            },
-                            itemBuilder: (BuildContext context) => [
-                              const PopupMenuItem(
-                                value: 'delete',
-                                child: Row(
+                                // Status indicators and Take button
+                                Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
-                                    Icon(Icons.delete, color: Colors.red),
-                                    SizedBox(width: 8),
-                                    Text('Delete'),
+                                    if (showToBeTaken)
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 10,
+                                          vertical: 6,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: Colors.amber.shade100,
+                                          borderRadius: BorderRadius.circular(
+                                            6,
+                                          ),
+                                        ),
+                                        child: Text(
+                                          'To Be Taken',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w600,
+                                            color: Colors.amber.shade900,
+                                          ),
+                                        ),
+                                      ),
+                                    if (showTakeButton)
+                                      SizedBox(
+                                        width: 70,
+                                        height: 36,
+                                        child: ElevatedButton(
+                                          style: ElevatedButton.styleFrom(
+                                            padding: EdgeInsets.zero,
+                                            elevation: 3,
+                                          ),
+                                          onPressed: () async {
+                                            await _markDoseTaken(entry);
+                                          },
+                                          child: const Text(
+                                            'Take',
+                                            style: TextStyle(fontSize: 13),
+                                          ),
+                                        ),
+                                      ),
+                                    if (isTaken)
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 10,
+                                          vertical: 6,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: Colors.green.shade100,
+                                          borderRadius: BorderRadius.circular(
+                                            6,
+                                          ),
+                                        ),
+                                        child: const Text(
+                                          'Taken',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w600,
+                                            color: Colors.green,
+                                          ),
+                                        ),
+                                      ),
+                                    if (showMissed)
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 10,
+                                          vertical: 6,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: Colors.red.shade100,
+                                          borderRadius: BorderRadius.circular(
+                                            6,
+                                          ),
+                                        ),
+                                        child: const Text(
+                                          'Missed',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w600,
+                                            color: Colors.red,
+                                          ),
+                                        ),
+                                      ),
+                                    const SizedBox(height: 8),
+                                    PopupMenuButton<String>(
+                                      onSelected: (value) {
+                                        if (value == 'missed') {
+                                          _markDoseMissed(entry);
+                                        } else if (value == 'edit') {
+                                          _openEditMedicineScreen(medicine);
+                                        } else if (value == 'delete') {
+                                          _showDeleteDialog(context, medicine);
+                                        }
+                                      },
+                                      itemBuilder: (BuildContext context) => [
+                                        if (!isTaken && !showMissed)
+                                          const PopupMenuItem(
+                                            value: 'missed',
+                                            child: Row(
+                                              children: [
+                                                Icon(
+                                                  Icons.close,
+                                                  color: Colors.red,
+                                                  size: 20,
+                                                ),
+                                                SizedBox(width: 8),
+                                                Text('Mark Missed'),
+                                              ],
+                                            ),
+                                          ),
+                                        const PopupMenuItem(
+                                          value: 'edit',
+                                          child: Row(
+                                            children: [
+                                              Icon(
+                                                Icons.edit,
+                                                color: Colors.blue,
+                                                size: 20,
+                                              ),
+                                              SizedBox(width: 8),
+                                              Text('Edit Medicine'),
+                                            ],
+                                          ),
+                                        ),
+                                        const PopupMenuItem(
+                                          value: 'delete',
+                                          child: Row(
+                                            children: [
+                                              Icon(
+                                                Icons.delete,
+                                                color: Colors.red,
+                                                size: 20,
+                                              ),
+                                              SizedBox(width: 8),
+                                              Text('Delete Medicine'),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                      child: Icon(
+                                        Icons.more_vert,
+                                        color: Colors.grey.shade600,
+                                        size: 20,
+                                      ),
+                                    ),
                                   ],
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
-                        ],
+                        ),
                       ),
-                    ],
-                  ),
+                    );
+                  }),
                 ),
-              );
-            },
-          );
+              ),
+            ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: _openAddMedicineScreen,
+        backgroundColor: Theme.of(context).colorScheme.primary,
+        child: const Icon(Icons.add, color: Colors.white, size: 28),
+      ),
+    );
   }
 
   void _showDeleteDialog(BuildContext context, Medicine medicine) {
@@ -298,11 +687,23 @@ class _MedicineListScreenState extends State<MedicineListScreen> {
           ),
           TextButton(
             onPressed: () {
-              widget.onDelete(medicine.id);
               Navigator.pop(context);
+              // Call delete callback
+              widget.onDelete(medicine.id);
+              // Show success message
               ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('${medicine.name} deleted')),
+                SnackBar(
+                  content: Text('${medicine.name} deleted'),
+                  backgroundColor: Colors.red,
+                  duration: const Duration(seconds: 2),
+                ),
               );
+              // Wait and rebuild
+              Future.delayed(const Duration(milliseconds: 500), () {
+                if (mounted) {
+                  _buildDoseEntries();
+                }
+              });
             },
             child: const Text('Delete', style: TextStyle(color: Colors.red)),
           ),
@@ -311,102 +712,21 @@ class _MedicineListScreenState extends State<MedicineListScreen> {
     );
   }
 
-  Future<void> _markAsTaken(Medicine medicine) async {
-    final historyId = DateTime.now().millisecondsSinceEpoch.toString();
-    final medicineHistory = MedicineHistory(
-      id: historyId,
-      medicineId: medicine.id,
-      medicineName: medicine.name,
-      dosage: medicine.dosage,
-      dateTaken: DateTime.now(),
-      status: 'taken',
-    );
-
-    try {
-      await FirebaseOperations.writeData(
-        'medicine_history/$historyId',
-        medicineHistory.toMap(),
-      );
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('✓ ${medicine.name} marked as taken!'),
-          backgroundColor: Colors.green,
-          duration: const Duration(seconds: 2),
-        ),
-      );
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
-      );
-    }
-
-    // Cancel any scheduled or saved notifications for this medicine
-    try {
-      final notificationsDb = await FirebaseOperations.readData(
-        'notifications',
-      );
-      if (notificationsDb != null && notificationsDb is Map) {
-        for (var entry in notificationsDb.entries) {
-          final key = entry.key;
-          final value = entry.value;
-          if (value is Map) {
-            final name = value['medicineName'] ?? '';
-            final type = value['type'] ?? '';
-            if (name == medicine.name &&
-                (type == 'medicine_reminder' || type == 'advance_reminder')) {
-              final localId = value['localId'] is num
-                  ? (value['localId'] as num).toInt()
-                  : null;
-              try {
-                await NotificationsService().clearNotification(
-                  key.toString(),
-                  localId: localId,
-                );
-              } catch (e) {
-                // ignore: avoid_print
-                print('Error clearing notification $key: $e');
-              }
-            }
-          }
-        }
-      }
-    } catch (e) {
-      // ignore: avoid_print
-      print('Error checking notifications to cancel: $e');
-    }
-
-    // Refresh today's history and UI
-    await _loadTodayHistory();
+  @override
+  void dispose() {
+    _clearDoseTimers();
+    super.dispose();
   }
+}
 
-  Future<void> _markAsMissed(Medicine medicine) async {
-    final historyId = DateTime.now().millisecondsSinceEpoch.toString();
-    final medicineHistory = MedicineHistory(
-      id: historyId,
-      medicineId: medicine.id,
-      medicineName: medicine.name,
-      dosage: medicine.dosage,
-      dateTaken: DateTime.now(),
-      status: 'missed',
-    );
+class _DoseEntry {
+  final Medicine medicine;
+  final DateTime scheduledDateTime;
+  final int doseIndex;
 
-    try {
-      await FirebaseOperations.writeData(
-        'medicine_history/$historyId',
-        medicineHistory.toMap(),
-      );
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('⚠️ ${medicine.name} marked as missed'),
-          backgroundColor: Colors.orange,
-          duration: const Duration(seconds: 2),
-        ),
-      );
-    } catch (e) {
-      print('Error marking as missed: $e');
-    }
-
-    // Refresh today's history and UI
-    await _loadTodayHistory();
-  }
+  _DoseEntry({
+    required this.medicine,
+    required this.scheduledDateTime,
+    required this.doseIndex,
+  });
 }

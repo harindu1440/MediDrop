@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import '../firebase_operations.dart';
 import '../models/medicine_history.dart';
-import '../services/notifications_service.dart';
 
 class HistoryScreen extends StatefulWidget {
   const HistoryScreen({super.key});
@@ -13,7 +12,7 @@ class HistoryScreen extends StatefulWidget {
 class _HistoryScreenState extends State<HistoryScreen> {
   List<MedicineHistory> history = [];
   bool _isLoading = true;
-  String _selectedFilter = 'all'; // all, taken, missed, skipped
+  String _selectedFilter = 'all'; // all, taken, missed
 
   @override
   void initState() {
@@ -46,10 +45,28 @@ class _HistoryScreenState extends State<HistoryScreen> {
   }
 
   List<MedicineHistory> _getFilteredHistory() {
+    // Group by medicine + date, keep only latest per day
+    final Map<String, MedicineHistory> uniqueByDay = {};
+
+    for (var item in history) {
+      final dateKey =
+          '${item.medicineName}_${item.dateTaken.year}-${item.dateTaken.month}-${item.dateTaken.day}';
+      // Keep the most recent entry for each medicine per day
+      if (!uniqueByDay.containsKey(dateKey) ||
+          item.dateTaken.isAfter(uniqueByDay[dateKey]!.dateTaken)) {
+        uniqueByDay[dateKey] = item;
+      }
+    }
+
+    final deduplicatedHistory = uniqueByDay.values.toList();
+    deduplicatedHistory.sort((a, b) => b.dateTaken.compareTo(a.dateTaken));
+
     if (_selectedFilter == 'all') {
-      return history;
+      return deduplicatedHistory;
     } else {
-      return history.where((item) => item.status == _selectedFilter).toList();
+      return deduplicatedHistory
+          .where((item) => item.status == _selectedFilter)
+          .toList();
     }
   }
 
@@ -94,40 +111,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
       }
     }
 
-    // Cancel any scheduled or saved notifications for this medicine
-    try {
-      final notificationsDb = await FirebaseOperations.readData(
-        'notifications',
-      );
-      if (notificationsDb != null && notificationsDb is Map) {
-        for (var entry in notificationsDb.entries) {
-          final key = entry.key;
-          final value = entry.value;
-          if (value is Map) {
-            final name = value['medicineName'] ?? '';
-            final type = value['type'] ?? '';
-            if (name == medicineName &&
-                (type == 'medicine_reminder' || type == 'advance_reminder')) {
-              final localId = value['localId'] is num
-                  ? (value['localId'] as num).toInt()
-                  : null;
-              try {
-                await NotificationsService().clearNotification(
-                  key.toString(),
-                  localId: localId,
-                );
-              } catch (e) {
-                // ignore: avoid_print
-                print('Error clearing notification $key: $e');
-              }
-            }
-          }
-        }
-      }
-    } catch (e) {
-      // ignore: avoid_print
-      print('Error checking notifications to cancel: $e');
-    }
+    // Notification cleanup removed
   }
 
   void _markMedicineMissed(
@@ -172,8 +156,6 @@ class _HistoryScreenState extends State<HistoryScreen> {
         return Colors.green;
       case 'missed':
         return Colors.red;
-      case 'skipped':
-        return Colors.orange;
       default:
         return Colors.grey;
     }
@@ -185,74 +167,437 @@ class _HistoryScreenState extends State<HistoryScreen> {
         return '✓';
       case 'missed':
         return '✗';
-      case 'skipped':
-        return '⊘';
       default:
         return '?';
     }
   }
 
+  Future<void> _clearAllHistory() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Clear All History'),
+        content: const Text(
+          'Are you sure you want to delete all medicine history? This action cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && mounted) {
+      try {
+        // Show loading message
+        ScaffoldMessenger.of(context).clearSnackBars();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Clearing history...'),
+            duration: Duration(milliseconds: 500),
+          ),
+        );
+
+        // Delete from Firebase
+        await FirebaseOperations.deleteData('medicine_history');
+
+        // Wait for Firebase sync
+        await Future.delayed(const Duration(milliseconds: 800));
+
+        if (!mounted) return;
+
+        // Update local state
+        setState(() => history = []);
+
+        if (!mounted) return;
+
+        // Show success message
+        ScaffoldMessenger.of(context).clearSnackBars();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✓ History cleared successfully'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).clearSnackBars();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error clearing history: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    }
+  }
+
+  Map<String, int> _getProgressData() {
+    // Use deduplicated history (only one entry per medicine per day)
+    final deduplicatedHistory = _getFilteredHistory();
+    final taken = deduplicatedHistory.where((h) => h.status == 'taken').length;
+    final missed = deduplicatedHistory
+        .where((h) => h.status == 'missed')
+        .length;
+    return {'taken': taken, 'missed': missed};
+  }
+
   @override
   Widget build(BuildContext context) {
     final filteredHistory = _getFilteredHistory();
+    final progressData = _getProgressData();
+    final total = progressData['taken']! + progressData['missed']!;
+    final takenPercentage = total > 0
+        ? (progressData['taken']! / total * 100)
+        : 0;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Medicine History'),
-        backgroundColor: Theme.of(context).colorScheme.primary,
-        elevation: 0,
-      ),
-      body: Column(
-        children: [
-          // Filter Chips
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.all(12),
-            child: Row(
-              children: [
-                _buildFilterChip('all', 'All'),
-                const SizedBox(width: 8),
-                _buildFilterChip('taken', 'Taken', Colors.green),
-                const SizedBox(width: 8),
-                _buildFilterChip('missed', 'Missed', Colors.red),
-                const SizedBox(width: 8),
-                _buildFilterChip('skipped', 'Skipped', Colors.orange),
-              ],
-            ),
-          ),
-          // History List
-          Expanded(
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : filteredHistory.isEmpty
-                ? Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.history,
-                          size: 64,
-                          color: Colors.grey.shade300,
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          'No history yet',
-                          style: TextStyle(
-                            fontSize: 18,
-                            color: Colors.grey.shade600,
-                          ),
+      appBar: PreferredSize(preferredSize: Size.zero, child: Container()),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : SingleChildScrollView(
+              child: Column(
+                children: [
+                  // Progress Chart Card
+                  Container(
+                    margin: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(18),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.blue.withOpacity(0.12),
+                          blurRadius: 16,
+                          offset: const Offset(0, 4),
                         ),
                       ],
                     ),
-                  )
-                : ListView.builder(
-                    itemCount: filteredHistory.length,
-                    padding: const EdgeInsets.all(12),
-                    itemBuilder: (context, index) {
-                      final item = filteredHistory[index];
-                      return _buildHistoryCard(item);
-                    },
+                    child: Card(
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(18),
+                      ),
+                      color: Colors.white,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(18),
+                          gradient: LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [
+                              Colors.blue.shade50,
+                              Colors.blue.shade100.withOpacity(0.3),
+                            ],
+                          ),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.all(24),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // Header with Icon
+                              Row(
+                                children: [
+                                  Container(
+                                    width: 48,
+                                    height: 48,
+                                    decoration: BoxDecoration(
+                                      gradient: LinearGradient(
+                                        begin: Alignment.topLeft,
+                                        end: Alignment.bottomRight,
+                                        colors: [
+                                          Colors.blue.shade300,
+                                          Colors.blue.shade600,
+                                        ],
+                                      ),
+                                      borderRadius: BorderRadius.circular(12),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: Colors.blue.withOpacity(0.3),
+                                          blurRadius: 8,
+                                          offset: const Offset(0, 2),
+                                        ),
+                                      ],
+                                    ),
+                                    child: const Icon(
+                                      Icons.trending_up,
+                                      color: Colors.white,
+                                      size: 24,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 16),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        const Text(
+                                          'Medicine Progress',
+                                          style: TextStyle(
+                                            fontSize: 18,
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.black87,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          'Your medication adherence',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: Colors.grey.shade600,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 28),
+                              // Completion Rate Section
+                              Container(
+                                padding: const EdgeInsets.all(16),
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(14),
+                                  color: Colors.white.withOpacity(0.6),
+                                  border: Border.all(
+                                    color: Colors.blue.shade100,
+                                    width: 1,
+                                  ),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Text(
+                                          'Completion Rate',
+                                          style: TextStyle(
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w600,
+                                            color: Colors.grey.shade700,
+                                          ),
+                                        ),
+                                        Text(
+                                          '${takenPercentage.toStringAsFixed(0)}%',
+                                          style: TextStyle(
+                                            fontSize: 18,
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.green.shade600,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 12),
+                                    ClipRRect(
+                                      borderRadius: BorderRadius.circular(10),
+                                      child: LinearProgressIndicator(
+                                        value: total > 0
+                                            ? (takenPercentage / 100)
+                                            : 0,
+                                        minHeight: 12,
+                                        backgroundColor: Colors.grey.shade200,
+                                        valueColor:
+                                            AlwaysStoppedAnimation<Color>(
+                                              Colors.green.shade400,
+                                            ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 24),
+                              // Stats Grid (3 cards)
+                              GridView.count(
+                                crossAxisCount: 3,
+                                shrinkWrap: true,
+                                physics: const NeverScrollableScrollPhysics(),
+                                mainAxisSpacing: 12,
+                                crossAxisSpacing: 12,
+                                childAspectRatio: 1.2,
+                                children: [
+                                  _buildProgressStatCard(
+                                    'Taken',
+                                    progressData['taken'].toString(),
+                                    Colors.green,
+                                    Icons.check_circle,
+                                  ),
+                                  _buildProgressStatCard(
+                                    'Missed',
+                                    progressData['missed'].toString(),
+                                    Colors.red,
+                                    Icons.cancel,
+                                  ),
+                                  _buildProgressStatCard(
+                                    'Total',
+                                    total.toString(),
+                                    Colors.blue,
+                                    Icons.calendar_today,
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 24),
+                              // Clear History Button
+                              SizedBox(
+                                width: double.infinity,
+                                height: 48,
+                                child: ElevatedButton.icon(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.red.shade500,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    elevation: 2,
+                                  ),
+                                  onPressed: _clearAllHistory,
+                                  icon: const Icon(
+                                    Icons.delete_outline,
+                                    size: 20,
+                                  ),
+                                  label: const Text(
+                                    'Clear All History',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 15,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
                   ),
+                  // Filter Chips
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Row(
+                      children: [
+                        _buildFilterChip('all', 'All'),
+                        const SizedBox(width: 8),
+                        _buildFilterChip('taken', 'Taken', Colors.green),
+                        const SizedBox(width: 8),
+                        _buildFilterChip('missed', 'Missed', Colors.red),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  // History List
+                  if (filteredHistory.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.history,
+                            size: 64,
+                            color: Colors.grey.shade300,
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            'No history yet',
+                            style: TextStyle(
+                              fontSize: 18,
+                              color: Colors.grey.shade600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  else
+                    ListView.builder(
+                      itemCount: filteredHistory.length,
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 8,
+                      ),
+                      itemBuilder: (context, index) {
+                        final item = filteredHistory[index];
+                        return _buildHistoryCard(item);
+                      },
+                    ),
+                  const SizedBox(height: 16),
+                ],
+              ),
+            ),
+    );
+  }
+
+  Widget _buildStatBox(String label, String value, Color color) {
+    return Column(
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            color: Colors.grey.shade600,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+            color: color,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildProgressStatCard(
+    String label,
+    String value,
+    Color color,
+    IconData icon,
+  ) {
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(12),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [color.withOpacity(0.08), color.withOpacity(0.03)],
+        ),
+        border: Border.all(color: color.withOpacity(0.2), width: 1),
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, color: color, size: 26),
+          const SizedBox(height: 8),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 11,
+              color: Colors.grey.shade600,
+              fontWeight: FontWeight.w500,
+            ),
+            textAlign: TextAlign.center,
           ),
         ],
       ),
@@ -286,73 +631,100 @@ class _HistoryScreenState extends State<HistoryScreen> {
         : '';
 
     return Card(
-      margin: const EdgeInsets.symmetric(vertical: 8),
-      child: ListTile(
-        leading: Container(
-          width: 50,
-          height: 50,
-          decoration: BoxDecoration(
-            color: statusColor.withOpacity(0.2),
-            borderRadius: BorderRadius.circular(8),
+      margin: const EdgeInsets.only(bottom: 12),
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Colors.white, statusColor.withOpacity(0.05)],
           ),
-          child: Center(
-            child: Text(
-              statusIcon,
-              style: TextStyle(
-                fontSize: 24,
-                color: statusColor,
-                fontWeight: FontWeight.bold,
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Row(
+            children: [
+              // Status Icon
+              Container(
+                width: 50,
+                height: 50,
+                decoration: BoxDecoration(
+                  color: statusColor.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: statusColor.withOpacity(0.3),
+                    width: 2,
+                  ),
+                ),
+                child: Center(
+                  child: Text(
+                    statusIcon,
+                    style: TextStyle(
+                      fontSize: 24,
+                      color: statusColor,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
               ),
-            ),
-          ),
-        ),
-        title: Text(
-          '${item.medicineName}$doseInfo',
-          style: const TextStyle(fontWeight: FontWeight.bold),
-        ),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const SizedBox(height: 4),
-            Text('Dosage: ${item.dosage}'),
-            Text(formattedDate),
-            if (item.notes != null) ...[
-              const SizedBox(height: 4),
-              Text(
-                'Notes: ${item.notes}',
-                style: TextStyle(
-                  fontStyle: FontStyle.italic,
-                  color: Colors.grey.shade600,
+              const SizedBox(width: 12),
+              // Medicine Info
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${item.medicineName}$doseInfo',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 15,
+                        color: Colors.black87,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Dosage: ${item.dosage}',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      formattedDate,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.grey.shade500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // Status Badge
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
+                decoration: BoxDecoration(
+                  color: statusColor.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  item.status.toUpperCase(),
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    color: statusColor,
+                    letterSpacing: 0.3,
+                  ),
                 ),
               ),
             ],
-          ],
-        ),
-        trailing: PopupMenuButton(
-          itemBuilder: (context) => [
-            if (item.status != 'taken')
-              PopupMenuItem(
-                child: const Text('Mark as Taken'),
-                onTap: () {
-                  _markMedicineTaken(
-                    item.medicineId,
-                    item.medicineName,
-                    item.dosage,
-                  );
-                },
-              ),
-            if (item.status != 'missed')
-              PopupMenuItem(
-                child: const Text('Mark as Missed'),
-                onTap: () {
-                  _markMedicineMissed(
-                    item.medicineId,
-                    item.medicineName,
-                    item.dosage,
-                  );
-                },
-              ),
-          ],
+          ),
         ),
       ),
     );

@@ -4,7 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'screens/auth_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/splash_screen.dart';
-import 'services/notifications_service.dart';
+// notifications removed: notifications_service import deleted
 import 'theme.dart';
 
 void main() async {
@@ -25,8 +25,7 @@ void main() async {
     print('Firebase already initialized or error: $e');
   }
 
-  // Initialize notifications
-  await NotificationsService().initNotifications();
+  // Notifications removed: initialization skipped
 
   // Load saved user (if any) to skip login
   final prefs = await SharedPreferences.getInstance();

@@ -76,7 +76,12 @@ class _LiquidLevelTestScreenState extends State<LiquidLevelTestScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Test Liquid Level'),
+        title: Image.asset(
+          'assets/medidrop1.png',
+          height: 28,
+          errorBuilder: (context, error, stackTrace) =>
+              const Text('Test Liquid Level'),
+        ),
         backgroundColor: Colors.blue,
       ),
       body: _isLoading

@@ -90,12 +90,16 @@ class _AddMedicineScreenState extends State<AddMedicineScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(
-          isEditing ? 'Edit Medicine' : 'Add Medicine',
-          style: const TextStyle(
-            fontSize: 20,
-            fontWeight: FontWeight.bold,
-            color: Colors.white,
+        title: Image.asset(
+          'assets/medidrop1.png',
+          height: 28,
+          errorBuilder: (context, error, stackTrace) => Text(
+            isEditing ? 'Edit Medicine' : 'Add Medicine',
+            style: const TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
+            ),
           ),
         ),
         backgroundColor: Colors.blue.shade700,

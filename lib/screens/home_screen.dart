@@ -974,27 +974,31 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: RichText(
-          text: TextSpan(
-            children: [
-              TextSpan(
-                text: 'Medi',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 20,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: 0.6,
+        title: Image.asset(
+          'assets/medidrop1.png',
+          height: 32,
+          errorBuilder: (context, error, stackTrace) => RichText(
+            text: TextSpan(
+              children: [
+                TextSpan(
+                  text: 'Medi',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.6,
+                  ),
                 ),
-              ),
-              TextSpan(
-                text: 'Drop',
-                style: TextStyle(
-                  color: Colors.yellow.shade200,
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
+                TextSpan(
+                  text: 'Drop',
+                  style: TextStyle(
+                    color: Colors.yellow.shade200,
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
         backgroundColor: Colors.blue.shade600,

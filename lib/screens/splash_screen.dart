@@ -83,10 +83,18 @@ class _SplashScreenState extends State<SplashScreen>
                             ),
                           ],
                         ),
-                        child: const Icon(
-                          Icons.medication_liquid,
-                          size: 70,
-                          color: Colors.blue,
+                        clipBehavior: Clip.antiAlias,
+                        child: Image.asset(
+                          'assets/medidrop.png',
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) =>
+                              const Center(
+                                child: Icon(
+                                  Icons.medication_liquid,
+                                  size: 70,
+                                  color: Colors.blue,
+                                ),
+                              ),
                         ),
                       ),
                       const SizedBox(height: 30),

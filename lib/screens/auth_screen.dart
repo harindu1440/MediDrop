@@ -43,10 +43,15 @@ class _AuthScreenState extends State<AuthScreen> {
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(20),
                   ),
-                  child: Icon(
-                    Icons.medication,
-                    size: 50,
-                    color: Colors.blue.shade600,
+                  clipBehavior: Clip.antiAlias,
+                  child: Image.asset(
+                    'assets/medidrop.png',
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) => Icon(
+                      Icons.medication,
+                      size: 50,
+                      color: Colors.blue.shade600,
+                    ),
                   ),
                 ),
                 const SizedBox(height: 24),
